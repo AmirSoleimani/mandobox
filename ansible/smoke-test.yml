@@ -1,0 +1,28 @@
+---
+# M1 acceptance smoke test (PLAN §14): boot a throwaway microVM and observe userspace.
+# Run after site.yml:  ansible-playbook smoke-test.yml
+- name: Smoke test — boot a throwaway microVM
+  hosts: fleet
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Install the smoke-test script
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/files/fleet-smoketest.sh"
+        dest: /usr/local/sbin/fleet-smoketest
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Boot a throwaway microVM and check for userspace
+      ansible.builtin.command: /usr/local/sbin/fleet-smoketest
+      environment:
+        FLEET_FC_BIN: /usr/local/bin/firecracker
+        FLEET_KERNEL: "{{ fleet_kernels_dir }}/vmlinux"
+      register: fleet_smoke
+      changed_when: false
+
+    - name: Show smoke-test output
+      ansible.builtin.debug:
+        var: fleet_smoke.stdout_lines

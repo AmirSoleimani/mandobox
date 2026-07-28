@@ -1,0 +1,34 @@
+# {{ ansible_managed }}
+[Unit]
+Description=fleet-agent — microVM API (mTLS, PLAN §7.1)
+After=network-online.target nftables.service fleet-net-anchor.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+# Root: fleet-agent runs jailer, creates tap devices, chowns volumes, and opens /dev/kvm.
+User=root
+ExecStart={{ fleet_agent_bin }} \
+  -listen {{ fleet_agent_listen }} \
+  -tls-cert {{ fleet_agent_tls_dir }}/server.crt \
+  -tls-key {{ fleet_agent_tls_dir }}/server.key \
+  -client-ca {{ fleet_agent_tls_dir }}/client-ca.crt \
+  -images-dir {{ fleet_images_dir }} \
+  -workspaces-dir {{ fleet_workspaces_dir }} \
+  -kernels-dir {{ fleet_kernels_dir }} \
+  -kernel {{ fleet_kernels_dir }}/vmlinux \
+  -jail-dir {{ fleet_jail_dir }} \
+  -run-dir {{ fleet_vm_state_dir }} \
+  -firecracker-bin /usr/local/bin/firecracker \
+  -jailer-bin /usr/local/bin/jailer \
+  -guest-subnet {{ fleet_guest_subnet }} \
+  -host-gw {{ fleet_host_gw_addr }} \
+  -jail-uid {{ fleet_uid }} \
+  -jail-gid {{ fleet_gid }} \
+  -max-vms {{ fleet_agent_max_vms }} \
+  -workspace-size-mib {{ fleet_agent_workspace_size_mib }}
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

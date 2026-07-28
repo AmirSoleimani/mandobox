@@ -1,0 +1,144 @@
+---
+- name: Check the cross-compiled binaries exist on the controller
+  ansible.builtin.stat:
+    path: "{{ fleet_agent_dist_dir }}/{{ item }}"
+  loop:
+    - fleet-agent
+    - fleet-reconciler
+  delegate_to: localhost
+  run_once: true
+  become: false
+  register: fleet_agent_bin_stat
+
+- name: Assert the binaries were built
+  ansible.builtin.assert:
+    that:
+      - "not (false in (fleet_agent_bin_stat.results | map(attribute='stat.exists') | list))"
+    fail_msg: >-
+      Missing binaries in {{ fleet_agent_dist_dir }}. Run `make dist` at the repo root to
+      cross-compile fleet-agent and fleet-reconciler for linux/amd64.
+  run_once: true
+
+- name: Check the TLS material exists on the controller
+  ansible.builtin.stat:
+    path: "{{ fleet_agent_tls_src_dir }}"
+  delegate_to: localhost
+  run_once: true
+  become: false
+  register: fleet_agent_tls_stat
+
+- name: Assert the TLS material is present
+  ansible.builtin.assert:
+    that:
+      - fleet_agent_tls_stat.stat.exists
+      - fleet_agent_tls_stat.stat.isdir
+    fail_msg: >-
+      No TLS material at {{ fleet_agent_tls_src_dir }}. Generate a dev PKI with
+      `scripts/gen-dev-certs.sh {{ fleet_agent_tls_src_dir }} <fleet-host-ip>`, or point
+      fleet_agent_tls_src_dir at your real PKI.
+  run_once: true
+
+- name: Create the fleet config directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  loop:
+    - "{{ fleet_agent_conf_dir }}"
+    - "{{ fleet_agent_tls_dir }}"
+
+- name: Install the fleet-agent binary
+  ansible.builtin.copy:
+    src: "{{ fleet_agent_dist_dir }}/fleet-agent"
+    dest: "{{ fleet_agent_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart fleet-agent
+
+- name: Install the fleet-reconciler binary
+  ansible.builtin.copy:
+    src: "{{ fleet_agent_dist_dir }}/fleet-reconciler"
+    dest: "{{ fleet_agent_reconciler_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: fleet_agent_deploy_reconciler
+  notify: Restart fleet-reconciler
+
+- name: Install the fleet-agent TLS material
+  ansible.builtin.copy:
+    src: "{{ fleet_agent_tls_src_dir }}/{{ item.name }}"
+    dest: "{{ fleet_agent_tls_dir }}/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop: "{{ fleet_agent_tls_files }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Restart fleet-agent
+
+- name: Install the fleet-reconciler TLS material
+  ansible.builtin.copy:
+    src: "{{ fleet_agent_tls_src_dir }}/{{ item.name }}"
+    dest: "{{ fleet_agent_tls_dir }}/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop: "{{ fleet_agent_reconciler_tls_files }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: fleet_agent_deploy_reconciler
+  notify: Restart fleet-reconciler
+
+- name: Seed the expected-sessions authority file
+  ansible.builtin.copy:
+    content: |
+      {"sessions": []}
+    dest: "{{ fleet_agent_authority_file }}"
+    owner: root
+    group: root
+    mode: "0640"
+    force: false
+  when: fleet_agent_deploy_reconciler
+
+- name: Install the fleet-agent unit
+  ansible.builtin.template:
+    src: fleet-agent.service.j2
+    dest: /etc/systemd/system/fleet-agent.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd daemon (fleet-agent)
+    - Restart fleet-agent
+
+- name: Install the fleet-reconciler unit
+  ansible.builtin.template:
+    src: fleet-reconciler.service.j2
+    dest: /etc/systemd/system/fleet-reconciler.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: fleet_agent_deploy_reconciler
+  notify:
+    - Reload systemd daemon (fleet-agent)
+    - Restart fleet-reconciler
+
+- name: Apply unit changes before enabling services
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start fleet-agent
+  ansible.builtin.systemd_service:
+    name: fleet-agent
+    enabled: true
+    state: started
+
+- name: Enable and start fleet-reconciler
+  ansible.builtin.systemd_service:
+    name: fleet-reconciler
+    enabled: true
+    state: started
+  when: fleet_agent_deploy_reconciler

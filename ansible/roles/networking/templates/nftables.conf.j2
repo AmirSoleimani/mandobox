@@ -1,0 +1,74 @@
+#!/usr/sbin/nft -f
+# {{ ansible_managed }}
+#
+# Guest egress policy — PLAN §7.4, invariants I2 (no inbound to guests) and I3 (no
+# guest-to-guest). Deny-by-default is enforced for the guest tap class
+# ("{{ fleet_guest_iface_prefix }}*"): a guest may reach ONLY
+#   - the host resolver          ({{ fleet_host_gw_addr }} udp/tcp 53)
+#   - the host egress proxy       ({{ fleet_host_gw_addr }} tcp {{ fleet_egress_proxy_port }})
+#   - the control-plane NATS host ({{ fleet_nats_host }} tcp {{ fleet_nats_port }})
+# Everything else — other guests, the host's sensitive ports, the wider internet —
+# is dropped and counted. The counters are how injection attempts become visible.
+#
+# The input chain policy is 'accept' so this table does NOT govern the host's own
+# management inbound (SSH, and the fleet-agent mTLS API added in M2); guest inbound is
+# denied by the explicit tap catch-all drop. The forward chain is default-drop.
+#
+# Only "table inet fleet" is (re)defined, non-destructively, so a reload leaves other
+# tables intact — including the separate per-tap table fleet-agent adds at launch (M2).
+
+add table inet fleet
+delete table inet fleet
+
+table inet fleet {
+    set blocked_host_ports {
+        type inet_service
+        elements = { {{ fleet_blocked_host_ports | join(', ') }} }
+    }
+
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        iif "lo" accept
+        ct state established,related accept
+
+        # High-visibility drops for sensitive host ports reachable from a guest.
+        iifname "{{ fleet_guest_iface_prefix }}*" tcp dport @blocked_host_ports counter drop
+
+        # Host DNS resolver.
+        iifname "{{ fleet_guest_iface_prefix }}*" ip daddr {{ fleet_host_gw_addr }} udp dport 53 accept
+        iifname "{{ fleet_guest_iface_prefix }}*" ip daddr {{ fleet_host_gw_addr }} tcp dport 53 accept
+
+        # Host egress proxy — the only sanctioned egress path (§7.5).
+        iifname "{{ fleet_guest_iface_prefix }}*" ip daddr {{ fleet_host_gw_addr }} tcp dport {{ fleet_egress_proxy_port }} accept
+
+        # Deny-by-default for the guest tap class.
+        iifname "{{ fleet_guest_iface_prefix }}*" counter drop
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+
+        ct state established,related accept
+
+        # No guest-to-guest lateral movement (I3).
+        iifname "{{ fleet_guest_iface_prefix }}*" oifname "{{ fleet_guest_iface_prefix }}*" counter drop
+
+        # Guests may reach the control-plane NATS host directly (§7.4).
+        iifname "{{ fleet_guest_iface_prefix }}*" ip daddr {{ fleet_nats_host }} tcp dport {{ fleet_nats_port }} accept
+
+        # Deny-by-default for everything else forwarded from a guest.
+        iifname "{{ fleet_guest_iface_prefix }}*" counter drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+    }
+
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+
+        # Masquerade the guest→NATS forward path onto the host's outbound address.
+        ip saddr {{ networking_guest_subnet }} ip daddr {{ fleet_nats_host }} tcp dport {{ fleet_nats_port }} counter masquerade
+    }
+}

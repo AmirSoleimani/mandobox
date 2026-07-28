@@ -1,0 +1,4 @@
+---
+- name: Apply fleet tmpfiles
+  ansible.builtin.command: systemd-tmpfiles --create /etc/tmpfiles.d/fleet.conf
+  changed_when: false

@@ -1,0 +1,16 @@
+---
+# Host packages needed by the fleet. Networking (nftables, dnsmasq, CNI) and the
+# Firecracker binaries are installed by their own roles.
+base_packages:
+  - ca-certificates
+  - curl
+  - iproute2
+  - e2fsprogs # mkfs.ext4 for workspace volumes (M2)
+  - zstd # golden rootfs is shipped .ext4.zst (§7.2)
+  - jq
+  - busybox-static # minimal init for the smoke-test initramfs
+  - cpio # build the smoke-test initramfs
+  - gzip
+
+# APT cache is considered fresh for this long (seconds), to keep reruns fast.
+base_apt_cache_valid_time: 3600

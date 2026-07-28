@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+# Host resolver for guests (PLAN §7.4). DNS only — no DHCP; guests configure eth0
+# statically (§8.1). Bound to the anchor address so it is never exposed on the host's
+# public interface.
+interface={{ networking_anchor_iface }}
+bind-dynamic
+no-dhcp-interface={{ networking_anchor_iface }}
+listen-address={{ fleet_host_gw_addr }}
+port=53
+domain-needed
+bogus-priv
+no-resolv
+{% for upstream in networking_dns_upstreams %}
+server={{ upstream }}
+{% endfor %}

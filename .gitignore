@@ -1,0 +1,39 @@
+# Go build output
+/bin/
+/dist/
+*.test
+*.out
+
+# Python / tooling venvs
+.venv/
+__pycache__/
+
+# Ansible
+*.retry
+ansible/*.log
+ansible/fact_cache/
+
+# Local secrets / inventories (never commit real hosts, keys, or PKI)
+ansible/inventory/local.yml
+ansible/inventory/*.local.yml
+secrets/
+*.vault
+.vault_pass
+*.key
+*.crt
+*.csr
+*.srl
+
+# Large downloaded artifacts (kernels, rootfs images) — reconstructed by the playbook
+*.ext4
+*.ext4.zst
+*.squashfs
+vmlinux*
+initramfs*
+*.tgz
+*.tar.zst
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

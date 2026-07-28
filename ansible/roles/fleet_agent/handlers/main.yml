@@ -1,0 +1,14 @@
+---
+- name: Reload systemd daemon (fleet-agent)
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart fleet-agent
+  ansible.builtin.systemd_service:
+    name: fleet-agent
+    state: restarted
+
+- name: Restart fleet-reconciler
+  ansible.builtin.systemd_service:
+    name: fleet-reconciler
+    state: restarted
