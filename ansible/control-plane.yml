@@ -1,0 +1,11 @@
+---
+# Deploy the control-plane services. M3 brings up a minimal NATS server so fc-supervisor has
+# a transport (guests refuse to run without it). M4 adds Temporal, the webhook receiver, the
+# NATS bridge, and the credential minter here.
+#   ansible-playbook control-plane.yml
+- name: Deploy control-plane services
+  hosts: control
+  become: true
+  gather_facts: false
+  roles:
+    - role: nats

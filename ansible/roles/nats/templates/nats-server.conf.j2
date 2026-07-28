@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+#
+# M3 DEV configuration — NO AUTH. This is deliberately minimal so M3 can be tested end to
+# end. M4 replaces it with operator/account JWT scoping so each guest's credential is limited
+# to agent.<session_id>.> (PLAN §9, §6.3). Do NOT expose this port to the public internet;
+# only the fleet host (via nftables forward) should reach it.
+listen: {{ nats_listen }}
+max_payload: {{ nats_max_payload }}
+server_name: fleet-control

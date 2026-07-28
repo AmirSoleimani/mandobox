@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+[Unit]
+Description=NATS server (control plane, M3)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ nats_user }}
+ExecStart={{ nats_bin }} -c {{ nats_conf }}
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

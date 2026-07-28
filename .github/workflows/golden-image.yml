@@ -1,0 +1,47 @@
+name: golden-image
+
+# Build the content-addressed golden guest image (PLAN §7.2, M3). Publishes it as a workflow
+# artifact; wire the optional object-storage step below to your R2/S3 bucket for production.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - image/**
+      - internal/supervisor/**
+      - cmd/fc-supervisor/**
+      - go.mod
+      - go.sum
+      - .github/workflows/golden-image.yml
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ext4/zstd tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends e2fsprogs zstd
+
+      - name: Build golden image
+        id: build
+        run: |
+          SHA="$(bash image/build.sh | tail -n1)"
+          echo "image_sha=${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-image-${{ steps.build.outputs.image_sha }}
+          path: dist/images/rootfs-*.ext4.zst
+          retention-days: 14
+          if-no-files-found: error
+
+      # Optional: publish to object storage so the fleet host can pull it (PLAN §7.2).
+      # Enable by setting the R2/S3 secrets, then uncomment:
+      # - name: Publish to object storage
+      #   env:
+      #     AWS_ACCESS_KEY_ID: ${{ secrets.IMAGE_BUCKET_KEY }}
+      #     AWS_SECRET_ACCESS_KEY: ${{ secrets.IMAGE_BUCKET_SECRET }}
+      #     AWS_ENDPOINT_URL: ${{ secrets.IMAGE_BUCKET_ENDPOINT }}
+      #   run: aws s3 cp dist/images/ s3://${{ secrets.IMAGE_BUCKET }}/images/ --recursive
