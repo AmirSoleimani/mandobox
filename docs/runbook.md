@@ -80,17 +80,29 @@ curl --cert secrets/fleet-tls/reconciler.crt \
 
 ## 7. Golden image
 
-Build on a **Linux box with Docker** (or let CI do it — `.github/workflows/golden-image.yml`):
+The image needs a **Linux box with a rootfs builder** (`mke2fs`) — so not your Mac, and not
+inside a guest µVM. The **fleet host itself qualifies**; you do not need a separate Docker
+machine. Pick one:
+
+**A. On the fleet host, Docker-free (recommended — one command, no extra box):**
 
 ```sh
-bash image/build.sh                  # -> dist/images/rootfs-<sha>.ext4.zst  (prints the sha)
+make dist                            # controller: builds bin/fc-supervisor
+cd ansible && ansible-playbook build-image.yml
 ```
 
-Copy the artifact to the fleet host's image cache:
+This installs `mmdebstrap` on the fleet host, builds the rootfs, and writes
+`rootfs-<sha>.ext4.zst` **directly into `/var/lib/fleet/images/`** (the playbook prints the
+sha). Takes several minutes.
 
-```sh
-scp dist/images/rootfs-<sha>.ext4.zst root@<fleet-host-ip>:/var/lib/fleet/images/
-```
+**B. CI (production path):** push the repo to GitHub and let
+`.github/workflows/golden-image.yml` build it on Docker runners, then download the artifact
+and `scp` it to `/var/lib/fleet/images/` on the fleet host.
+
+**C. Any Linux box with Docker:** `bash image/build.sh` → `scp` the artifact to the fleet
+host's `/var/lib/fleet/images/`.
+
+Note the `<sha>` the build prints — you pass it as `IMAGE_SHA` in step 9.
 
 ## 8. GitHub App
 
