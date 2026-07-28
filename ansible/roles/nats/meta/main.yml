@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  author: Chelodo
+  description: Deploy a NATS server on the control plane (M3 minimal; JWT scoping in M4).
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+  galaxy_tags:
+    - fleet
+    - nats
+dependencies: []

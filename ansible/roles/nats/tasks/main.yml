@@ -1,0 +1,80 @@
+---
+- name: Create the nats system group
+  ansible.builtin.group:
+    name: "{{ nats_user }}"
+    system: true
+
+- name: Create the nats system user
+  ansible.builtin.user:
+    name: "{{ nats_user }}"
+    group: "{{ nats_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create nats directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ nats_install_dir }}"
+    - "{{ nats_conf_dir }}"
+
+- name: Download nats-server
+  ansible.builtin.get_url:
+    url: "{{ nats_download_url }}"
+    dest: "{{ nats_install_dir }}/nats-server-v{{ nats_version }}-linux-{{ nats_arch }}.tar.gz"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Extract nats-server
+  ansible.builtin.unarchive:
+    src: "{{ nats_install_dir }}/nats-server-v{{ nats_version }}-linux-{{ nats_arch }}.tar.gz"
+    dest: "{{ nats_install_dir }}"
+    remote_src: true
+    owner: root
+    group: root
+    creates: "{{ nats_install_dir }}/nats-server-v{{ nats_version }}-linux-{{ nats_arch }}/nats-server"
+
+- name: Install the nats-server binary
+  ansible.builtin.copy:
+    src: "{{ nats_install_dir }}/nats-server-v{{ nats_version }}-linux-{{ nats_arch }}/nats-server"
+    dest: "{{ nats_bin }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart nats
+
+- name: Install the nats config
+  ansible.builtin.template:
+    src: nats-server.conf.j2
+    dest: "{{ nats_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nats
+
+- name: Install the nats unit
+  ansible.builtin.template:
+    src: nats.service.j2
+    dest: /etc/systemd/system/nats.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd daemon (nats)
+    - Restart nats
+
+- name: Apply unit changes before enabling
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start nats
+  ansible.builtin.systemd_service:
+    name: nats
+    enabled: true
+    state: started

@@ -1,12 +1,14 @@
 ---
-# M2 — deploy fleet-agent and fleet-reconciler to the fleet host.
+# Deploy the fleet-host services (M2 fleet-agent + reconciler; M3 egress gateway).
 # Prerequisites (on the controller):
-#   make dist                                   # cross-compile linux/amd64 binaries -> bin/
-#   scripts/gen-dev-certs.sh secrets/fleet-tls <fleet-host-ip>   # dev mTLS PKI
+#   make dist                                                   # cross-compile binaries -> bin/
+#   scripts/gen-dev-certs.sh secrets/fleet-tls <fleet-host-ip>  # dev mTLS PKI (M2)
+#   printf '%s' "<real-anthropic-key>" > secrets/anthropic.key  # Tier-0 key (M3, §9)
 # Then:  ansible-playbook deploy.yml
-- name: Deploy fleet-agent (M2)
+- name: Deploy fleet-host services
   hosts: fleet
   become: true
   gather_facts: false
   roles:
     - role: fleet_agent
+    - role: egress_gateway

@@ -1,4 +1,4 @@
-BINS := fleet-agent fleet-reconciler
+BINS := fleet-agent fleet-reconciler fc-supervisor fleet-gateway
 DIST := bin
 
 .PHONY: build test vet dist clean

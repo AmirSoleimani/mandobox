@@ -1,0 +1,88 @@
+---
+- name: Check the fleet-gateway binary exists on the controller
+  ansible.builtin.stat:
+    path: "{{ egress_gateway_dist_dir }}/fleet-gateway"
+  delegate_to: localhost
+  run_once: true
+  become: false
+  register: egress_gateway_bin_stat
+
+- name: Assert the binary was built
+  ansible.builtin.assert:
+    that:
+      - egress_gateway_bin_stat.stat.exists
+    fail_msg: "Missing {{ egress_gateway_dist_dir }}/fleet-gateway. Run `make dist` first."
+  run_once: true
+
+- name: Check the Anthropic key exists on the controller
+  ansible.builtin.stat:
+    path: "{{ egress_gateway_key_src }}"
+  delegate_to: localhost
+  run_once: true
+  become: false
+  register: egress_gateway_key_stat
+
+- name: Assert the Anthropic key is present
+  ansible.builtin.assert:
+    that:
+      - egress_gateway_key_stat.stat.exists
+    fail_msg: >-
+      No Anthropic key at {{ egress_gateway_key_src }}. Place the real key there (it is
+      Tier-0 and must never enter a guest — §9), or override egress_gateway_key_src.
+  run_once: true
+
+- name: Create the gateway config directory
+  ansible.builtin.file:
+    path: "{{ egress_gateway_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install the fleet-gateway binary
+  ansible.builtin.copy:
+    src: "{{ egress_gateway_dist_dir }}/fleet-gateway"
+    dest: "{{ egress_gateway_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart fleet-gateway
+
+- name: Install the Anthropic key
+  ansible.builtin.copy:
+    src: "{{ egress_gateway_key_src }}"
+    dest: "{{ egress_gateway_conf_dir }}/anthropic.key"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart fleet-gateway
+
+- name: Install the CONNECT allowlist
+  ansible.builtin.copy:
+    content: "{{ egress_gateway_allowlist | join('\n') }}\n"
+    dest: "{{ egress_gateway_conf_dir }}/allowlist"
+    owner: root
+    group: root
+    mode: "0644"
+  when: egress_gateway_allowlist | length > 0
+  notify: Restart fleet-gateway
+
+- name: Install the fleet-gateway unit
+  ansible.builtin.template:
+    src: fleet-gateway.service.j2
+    dest: /etc/systemd/system/fleet-gateway.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd daemon (egress-gateway)
+    - Restart fleet-gateway
+
+- name: Apply unit changes before enabling
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start fleet-gateway
+  ansible.builtin.systemd_service:
+    name: fleet-gateway
+    enabled: true
+    state: started
