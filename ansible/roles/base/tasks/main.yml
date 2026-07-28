@@ -1,0 +1,67 @@
+---
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ base_apt_cache_valid_time }}"
+
+- name: Create the fleet group
+  ansible.builtin.group:
+    name: "{{ fleet_group }}"
+    gid: "{{ fleet_gid }}"
+    system: true
+
+# The jailer drops the Firecracker process to this uid/gid. It never logs in.
+- name: Create the fleet system user
+  ansible.builtin.user:
+    name: "{{ fleet_user }}"
+    uid: "{{ fleet_uid }}"
+    group: "{{ fleet_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ fleet_root_dir }}"
+    create_home: false
+    password_lock: true
+
+# Persistent layout (I7): only workspaces survive a VM; images/kernels are
+# reconstructible content-addressed caches.
+- name: Create persistent directory layout
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ fleet_root_dir }}", owner: root, group: root, mode: "0755" }
+    - { path: "{{ fleet_images_dir }}", owner: root, group: root, mode: "0755" }
+    - { path: "{{ fleet_kernels_dir }}", owner: root, group: root, mode: "0755" }
+    - { path: "{{ fleet_workspaces_dir }}", owner: root, group: "{{ fleet_group }}", mode: "0750" }
+    - { path: "{{ fleet_jail_dir }}", owner: root, group: root, mode: "0755" }
+  loop_control:
+    label: "{{ item.path }}"
+
+# Runtime VM state lives on tmpfs under /run so a host reboot clears orphan bookkeeping
+# while workspaces (real state) survive. tmpfiles.d recreates it on every boot.
+- name: Install tmpfiles.d entry for runtime state
+  ansible.builtin.template:
+    src: fleet-tmpfiles.conf.j2
+    dest: /etc/tmpfiles.d/fleet.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply fleet tmpfiles
+
+- name: Create runtime state directories now (before first reboot)
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ fleet_run_dir }}", owner: root, group: root, mode: "0755" }
+    - { path: "{{ fleet_vm_state_dir }}", owner: root, group: "{{ fleet_group }}", mode: "0750" }
+  loop_control:
+    label: "{{ item.path }}"

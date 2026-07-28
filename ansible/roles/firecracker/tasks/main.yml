@@ -1,0 +1,75 @@
+---
+- name: Create the Firecracker install directory
+  ansible.builtin.file:
+    path: "{{ firecracker_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download the Firecracker release tarball (checksum-verified)
+  ansible.builtin.get_url:
+    url: "{{ firecracker_release_url }}"
+    dest: "{{ firecracker_install_dir }}/firecracker-v{{ firecracker_version }}-{{ firecracker_arch }}.tgz"
+    checksum: "sha256:{{ firecracker_release_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Extract the Firecracker release
+  ansible.builtin.unarchive:
+    src: "{{ firecracker_install_dir }}/firecracker-v{{ firecracker_version }}-{{ firecracker_arch }}.tgz"
+    dest: "{{ firecracker_install_dir }}"
+    remote_src: true
+    owner: root
+    group: root
+    creates: "{{ firecracker_bin }}"
+
+- name: Ensure the Firecracker and jailer binaries are executable
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: "0755"
+    owner: root
+    group: root
+  loop:
+    - "{{ firecracker_bin }}"
+    - "{{ firecracker_jailer_bin }}"
+
+# Symlink the pinned version onto PATH so a version bump is a single retarget.
+- name: Symlink firecracker and jailer onto PATH
+  ansible.builtin.file:
+    src: "{{ item.src }}"
+    dest: "{{ firecracker_bin_dir }}/{{ item.name }}"
+    state: link
+    force: true
+  loop:
+    - { name: firecracker, src: "{{ firecracker_bin }}" }
+    - { name: jailer, src: "{{ firecracker_jailer_bin }}" }
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Download the guest kernel (checksum-verified)
+  ansible.builtin.get_url:
+    url: "{{ firecracker_kernel_url }}"
+    dest: "{{ fleet_kernels_dir }}/vmlinux-{{ firecracker_kernel_version }}"
+    checksum: "sha256:{{ firecracker_kernel_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Symlink the current guest kernel
+  ansible.builtin.file:
+    src: "{{ fleet_kernels_dir }}/vmlinux-{{ firecracker_kernel_version }}"
+    dest: "{{ fleet_kernels_dir }}/vmlinux"
+    state: link
+    force: true
+
+- name: Record the installed Firecracker version
+  ansible.builtin.command: "{{ firecracker_bin_dir }}/firecracker --version"
+  register: firecracker_version_out
+  changed_when: false
+  check_mode: false
+
+- name: Show the installed Firecracker version
+  ansible.builtin.debug:
+    msg: "{{ firecracker_version_out.stdout_lines | first }}"

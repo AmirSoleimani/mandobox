@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# fleet-reaper — host-side safety net that kills Firecracker microVMs which have
+# exceeded their absolute lifetime or gone silent. PLAN §7.6, invariant I8.
+#
+# It NEVER touches workspace volumes — a reaped VM's PR may still be open; only the
+# transient run-state dir under FLEET_VM_STATE_DIR is removed.
+#
+# Per-VM state (written by fleet-agent, M2) lives at $FLEET_VM_STATE_DIR/<session_id>/:
+#   firecracker.pid  required — pid of the Firecracker process
+#   started_at       optional — epoch seconds of launch (else ps elapsed time is used)
+#   heartbeat        optional — mtime refreshed while the VM is healthy
+#
+# In M1 nothing populates that directory, so this is a correct no-op. This is the host
+# safety net only; Temporal + the reconciliation loop are authoritative (§7.7).
+set -euo pipefail
+
+STATE_DIR="${FLEET_VM_STATE_DIR:-/run/fleet/vms}"
+MAX_LIFETIME="${FLEET_MAX_LIFETIME:-21600}"          # 6h
+HEARTBEAT_TIMEOUT="${FLEET_HEARTBEAT_TIMEOUT:-600}"  # 10m
+TERM_GRACE="${FLEET_TERM_GRACE:-10}"
+
+log() { echo "fleet-reaper: $*"; }
+
+# reap <pid> <session_id> <reason>
+reap() {
+  local pid="$1" sid="$2" reason="$3" i
+  log "reaping ${sid} pid=${pid}: ${reason}"
+  kill -TERM "${pid}" 2>/dev/null || true
+  for ((i = 0; i < TERM_GRACE; i++)); do
+    kill -0 "${pid}" 2>/dev/null || break
+    sleep 1
+  done
+  if kill -0 "${pid}" 2>/dev/null; then
+    kill -KILL "${pid}" 2>/dev/null || true
+  fi
+}
+
+[ -d "${STATE_DIR}" ] || exit 0
+now="$(date +%s)"
+
+shopt -s nullglob
+for vmdir in "${STATE_DIR}"/*/; do
+  sid="$(basename "${vmdir}")"
+  pidfile="${vmdir}firecracker.pid"
+  [ -f "${pidfile}" ] || continue
+  pid="$(cat "${pidfile}" 2>/dev/null || true)"
+  if [ -z "${pid}" ]; then
+    rm -rf "${vmdir}"
+    continue
+  fi
+
+  # Already gone: clear stale bookkeeping (workspace untouched).
+  if ! kill -0 "${pid}" 2>/dev/null; then
+    log "clearing stale state for ${sid} (pid ${pid} not running)"
+    rm -rf "${vmdir}"
+    continue
+  fi
+
+  # Guard against PID reuse: only ever kill an actual Firecracker process.
+  comm="$(cat "/proc/${pid}/comm" 2>/dev/null || true)"
+  if [ "${comm}" != "firecracker" ]; then
+    log "pid ${pid} for ${sid} is '${comm}', not firecracker — dropping stale state"
+    rm -rf "${vmdir}"
+    continue
+  fi
+
+  reason=""
+
+  # Absolute lifetime.
+  if [ -f "${vmdir}started_at" ]; then
+    start="$(cat "${vmdir}started_at" 2>/dev/null || echo "${now}")"
+    age=$((now - start))
+  else
+    age="$(ps -o etimes= -p "${pid}" 2>/dev/null | tr -d ' ')"
+    age="${age:-0}"
+  fi
+  if [ "${age}" -ge "${MAX_LIFETIME}" ]; then
+    reason="max-lifetime age=${age}s"
+  fi
+
+  # Stale heartbeat (only when a heartbeat file exists).
+  if [ -z "${reason}" ] && [ -f "${vmdir}heartbeat" ]; then
+    hb="$(stat -c %Y "${vmdir}heartbeat" 2>/dev/null || echo "${now}")"
+    idle=$((now - hb))
+    if [ "${idle}" -ge "${HEARTBEAT_TIMEOUT}" ]; then
+      reason="stale-heartbeat idle=${idle}s"
+    fi
+  fi
+
+  if [ -n "${reason}" ]; then
+    reap "${pid}" "${sid}" "${reason}"
+    rm -rf "${vmdir}" # transient state only — NOT the workspace volume (§7.6)
+  fi
+done

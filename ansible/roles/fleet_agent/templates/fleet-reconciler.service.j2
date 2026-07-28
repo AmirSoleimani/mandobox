@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+[Unit]
+Description=fleet-reconciler — orphan microVM reaper (PLAN §7.7)
+After=network-online.target fleet-agent.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=root
+ExecStart={{ fleet_agent_reconciler_bin }} \
+  -fleet-url {{ fleet_agent_reconciler_url }} \
+  -tls-cert {{ fleet_agent_tls_dir }}/reconciler.crt \
+  -tls-key {{ fleet_agent_tls_dir }}/reconciler.key \
+  -server-ca {{ fleet_agent_tls_dir }}/server-ca.crt \
+  -authority-file {{ fleet_agent_authority_file }} \
+  -interval {{ fleet_agent_reconciler_interval }} \
+  -grace {{ fleet_agent_reconciler_grace }}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

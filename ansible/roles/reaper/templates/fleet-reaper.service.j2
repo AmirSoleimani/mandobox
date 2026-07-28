@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Fleet reaper — kill over-age or silent microVMs (PLAN §7.6)
+After=network.target
+
+[Service]
+Type=oneshot
+Environment=FLEET_VM_STATE_DIR={{ fleet_vm_state_dir }}
+Environment=FLEET_MAX_LIFETIME={{ reaper_max_lifetime_seconds }}
+Environment=FLEET_HEARTBEAT_TIMEOUT={{ reaper_heartbeat_timeout_seconds }}
+Environment=FLEET_TERM_GRACE={{ reaper_term_grace_seconds }}
+ExecStart={{ reaper_bin }}

@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# Host network anchor: a dummy interface carrying the stable service address that guests
+# reach for DNS and the egress proxy (PLAN §7.4).
+[Unit]
+Description=Fleet host network anchor ({{ networking_anchor_iface }})
+After=network-pre.target
+Wants=network-pre.target
+Before=dnsmasq.service nftables.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Recreate cleanly each start so restarts are idempotent.
+ExecStartPre=-/usr/sbin/ip link del {{ networking_anchor_iface }}
+ExecStart=/usr/sbin/ip link add {{ networking_anchor_iface }} type dummy
+ExecStart=/usr/sbin/ip addr add {{ fleet_host_gw_addr }}/{{ fleet_host_gw_prefixlen }} dev {{ networking_anchor_iface }}
+ExecStart=/usr/sbin/ip link set {{ networking_anchor_iface }} up
+ExecStop=/usr/sbin/ip link del {{ networking_anchor_iface }}
+
+[Install]
+WantedBy=multi-user.target

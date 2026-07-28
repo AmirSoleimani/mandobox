@@ -1,0 +1,4 @@
+# {{ ansible_managed }}
+# Runtime fleet state on tmpfs — recreated on every boot (PLAN §7, I7/I8).
+d {{ fleet_run_dir }} 0755 root root -
+d {{ fleet_vm_state_dir }} 0750 root {{ fleet_group }} -

@@ -1,0 +1,102 @@
+---
+- name: Install networking packages
+  ansible.builtin.apt:
+    name: "{{ networking_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Enable IPv4 forwarding (guest → NATS path)
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_set: true
+    sysctl_file: /etc/sysctl.d/99-fleet.conf
+    state: present
+    reload: true
+
+# --- Host network anchor -------------------------------------------------------
+- name: Install the network-anchor unit
+  ansible.builtin.template:
+    src: fleet-net-anchor.service.j2
+    dest: /etc/systemd/system/fleet-net-anchor.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd daemon (networking)
+    - Restart network anchor
+
+# Reload + restart now (if the unit changed) so the anchor address exists before the
+# resolver binds to it. Idempotent: handlers only fire on an actual change.
+- name: Apply anchor unit changes before the resolver starts
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the network anchor
+  ansible.builtin.systemd_service:
+    name: fleet-net-anchor.service
+    enabled: true
+    state: started
+
+# --- Host resolver -------------------------------------------------------------
+- name: Install the fleet resolver config
+  ansible.builtin.template:
+    src: dnsmasq-fleet.conf.j2
+    dest: /etc/dnsmasq.d/fleet.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart dnsmasq
+
+- name: Enable and start the resolver
+  ansible.builtin.systemd_service:
+    name: dnsmasq
+    enabled: true
+    state: started
+
+# --- nftables ------------------------------------------------------------------
+- name: Install the fleet nftables ruleset
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0755"
+    validate: /usr/sbin/nft -c -f %s
+  notify: Reload nftables
+
+- name: Enable and start nftables
+  ansible.builtin.systemd_service:
+    name: nftables
+    enabled: true
+    state: started
+
+# --- CNI plugins (available for future use; not on the default datapath) -------
+- name: Create the CNI bin directory
+  ansible.builtin.file:
+    path: "{{ networking_cni_bin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: networking_install_cni
+
+- name: Download CNI plugins (checksum-verified)
+  ansible.builtin.get_url:
+    url: "{{ networking_cni_url }}"
+    dest: "/opt/cni/cni-plugins-linux-amd64-v{{ networking_cni_version }}.tgz"
+    checksum: "sha256:{{ networking_cni_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: networking_install_cni
+
+- name: Extract CNI plugins
+  ansible.builtin.unarchive:
+    src: "/opt/cni/cni-plugins-linux-amd64-v{{ networking_cni_version }}.tgz"
+    dest: "{{ networking_cni_bin_dir }}"
+    remote_src: true
+    owner: root
+    group: root
+    creates: "{{ networking_cni_bin_dir }}/loopback"
+  when: networking_install_cni

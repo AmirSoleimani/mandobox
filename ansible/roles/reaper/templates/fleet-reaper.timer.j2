@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Run the fleet reaper periodically (PLAN §7.6)
+
+[Timer]
+OnBootSec={{ reaper_interval }}
+OnUnitActiveSec={{ reaper_interval }}
+AccuracySec=15s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

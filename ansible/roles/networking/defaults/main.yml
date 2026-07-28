@@ -1,0 +1,27 @@
+---
+networking_packages:
+  - nftables
+  - dnsmasq
+
+# Host-side service anchor: a dummy interface carrying fleet_host_gw_addr so the resolver
+# (and, later, the egress proxy) have a stable address reachable from every guest tap.
+networking_anchor_iface: fleet0
+
+# Supernet from which fleet-agent allocates per-VM point-to-point /30s (no shared bridge).
+# Used only to scope the guest→NATS masquerade rule. Sourced from group_vars so the
+# nftables policy and the fleet-agent -guest-subnet flag never drift.
+networking_guest_subnet: "{{ fleet_guest_subnet }}"
+
+# Upstreams for the host resolver that guests are permitted to reach on UDP/TCP 53.
+networking_dns_upstreams:
+  - "1.1.1.1"
+  - "9.9.9.9"
+
+# CNI plugin binaries. The default datapath is direct taps + nftables (§7.1/§7.4); these
+# are installed as an available dependency, not on the datapath. Set false to skip.
+networking_install_cni: true
+networking_cni_version: "1.9.1"
+networking_cni_sha256: "b98f74a0f8522f0a83867178729c1aa70f2158f90c45a2ca8fa791db1c76b303"
+networking_cni_bin_dir: /opt/cni/bin
+networking_cni_url: >-
+  https://github.com/containernetworking/plugins/releases/download/v{{ networking_cni_version }}/cni-plugins-linux-amd64-v{{ networking_cni_version }}.tgz

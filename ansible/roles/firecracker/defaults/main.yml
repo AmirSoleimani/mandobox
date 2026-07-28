@@ -1,0 +1,24 @@
+---
+# Firecracker + jailer. Pin the version and verify the checksum (§7.2). Bump both
+# together; get the sha256 from the release's *.sha256.txt asset.
+firecracker_version: "1.16.1"
+firecracker_arch: x86_64
+firecracker_release_sha256: "382a02a869e4d6d5cb14c40577f9545e8458021ea8b0b2d3fc10ec14d9c242e6"
+firecracker_release_base: "https://github.com/firecracker-microvm/firecracker/releases/download"
+firecracker_release_url: >-
+  {{ firecracker_release_base }}/v{{ firecracker_version }}/firecracker-v{{ firecracker_version }}-{{ firecracker_arch }}.tgz
+
+firecracker_install_dir: /opt/firecracker
+firecracker_bin_dir: /usr/local/bin
+
+# Convenience: the extracted release directory and the two binaries we symlink.
+firecracker_release_dir: "{{ firecracker_install_dir }}/release-v{{ firecracker_version }}-{{ firecracker_arch }}"
+firecracker_bin: "{{ firecracker_release_dir }}/firecracker-v{{ firecracker_version }}-{{ firecracker_arch }}"
+firecracker_jailer_bin: "{{ firecracker_release_dir }}/jailer-v{{ firecracker_version }}-{{ firecracker_arch }}"
+
+# Guest kernel (uncompressed vmlinux). The Firecracker CI bucket publishes these; the
+# v1.16 prefix has no kernels yet, so we pin the current 6.1 LTS from the v1.14 prefix.
+firecracker_kernel_version: "6.1.155"
+firecracker_kernel_sha256: "e41c7048bd2475e7e788153823fcb9166a7e0b78c4c443bd6446d015fa735f53"
+firecracker_kernel_url: >-
+  https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.14/{{ firecracker_arch }}/vmlinux-{{ firecracker_kernel_version }}

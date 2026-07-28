@@ -1,0 +1,57 @@
+---
+# M1 — Fleet host provisioning. See docs/PLAN.md §7, §14.
+#
+# pre_tasks gate the whole run: the fleet host MUST have hardware virtualisation.
+# Hetzner Cloud has no /dev/kvm, so provisioning it is always a mistake — fail early
+# and loudly rather than half-configuring a host that can never boot a microVM (§7).
+- name: Provision the fleet host
+  hosts: fleet
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Assert the target is x86_64
+      ansible.builtin.assert:
+        that:
+          - ansible_architecture == "x86_64"
+        fail_msg: >-
+          This host is {{ ansible_architecture }}. The pinned Firecracker build and
+          guest kernel are x86_64. Provision on a Hetzner AX/EX (x86_64) box.
+        success_msg: Architecture is x86_64.
+
+    - name: Check for /dev/kvm
+      ansible.builtin.stat:
+        path: /dev/kvm
+      register: fleet_kvm_dev
+
+    - name: Assert /dev/kvm is present
+      ansible.builtin.assert:
+        that:
+          - fleet_kvm_dev.stat.exists
+          - fleet_kvm_dev.stat.ischr | default(false)
+        fail_msg: >-
+          /dev/kvm is missing. This is almost certainly a Hetzner *Cloud* instance,
+          which has no nested virtualisation. The fleet host must be a Hetzner
+          *dedicated* box (Robot AX/EX). See PLAN §7.
+        success_msg: /dev/kvm is present.
+
+    - name: Check /proc/cpuinfo for a hardware-virtualisation flag
+      ansible.builtin.command: grep -Eqw 'vmx|svm' /proc/cpuinfo
+      register: fleet_virt_flag
+      changed_when: false
+      failed_when: false
+
+    - name: Assert the CPU exposes hardware-virtualisation flags
+      ansible.builtin.assert:
+        that:
+          - fleet_virt_flag.rc == 0
+        fail_msg: >-
+          No vmx/svm flag in /proc/cpuinfo. KVM acceleration is unavailable on this
+          host, so Firecracker cannot run. See PLAN §7.
+        success_msg: CPU virtualisation flags present.
+
+  roles:
+    - role: base
+    - role: firecracker
+    - role: networking
+    - role: reaper

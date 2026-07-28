@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  author: Chelodo
+  description: Install Firecracker + jailer and the guest kernel, checksum-verified.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+  galaxy_tags:
+    - fleet
+    - firecracker
+dependencies: []

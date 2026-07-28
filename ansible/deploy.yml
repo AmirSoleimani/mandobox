@@ -1,0 +1,12 @@
+---
+# M2 — deploy fleet-agent and fleet-reconciler to the fleet host.
+# Prerequisites (on the controller):
+#   make dist                                   # cross-compile linux/amd64 binaries -> bin/
+#   scripts/gen-dev-certs.sh secrets/fleet-tls <fleet-host-ip>   # dev mTLS PKI
+# Then:  ansible-playbook deploy.yml
+- name: Deploy fleet-agent (M2)
+  hosts: fleet
+  become: true
+  gather_facts: false
+  roles:
+    - role: fleet_agent

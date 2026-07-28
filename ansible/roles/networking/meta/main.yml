@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: Chelodo
+  description: Deny-by-default guest networking — nftables, host resolver, CNI, forwarding.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+  galaxy_tags:
+    - fleet
+    - firecracker
+    - networking
+dependencies: []
