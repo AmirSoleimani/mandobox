@@ -26,6 +26,9 @@ tracks implementation state.
 
 Do not start a milestone until the previous one's acceptance criteria (PLAN §14) pass.
 
+> **Deploying?** Follow **[`docs/runbook.md`](docs/runbook.md)** — the linear operator guide
+> from bare Hetzner boxes through Ansible to a running fleet.
+
 ## Repository layout
 
 ```
