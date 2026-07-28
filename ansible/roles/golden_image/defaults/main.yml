@@ -1,0 +1,17 @@
+---
+# Prebuilt fc-supervisor binary on the controller (make dist -> bin/fc-supervisor).
+golden_image_supervisor_src: "{{ playbook_dir }}/../bin/fc-supervisor"
+
+# On-host build inputs/outputs.
+golden_image_lib_dir: /usr/local/lib/fleet
+golden_image_out_dir: "{{ fleet_images_dir }}" # /var/lib/fleet/images
+golden_image_size_mb: 2048
+
+# Build dependencies installed on the fleet host (Docker-free path).
+golden_image_packages:
+  - mmdebstrap
+  - debian-archive-keyring
+  - e2fsprogs
+  - zstd
+  - curl
+  - ca-certificates

@@ -1,0 +1,11 @@
+---
+# Build the golden guest image on the fleet host, Docker-free (M3). No separate Docker box
+# needed — mmdebstrap builds the rootfs and the artifact lands directly in the image cache.
+# Prerequisite: `make dist` on the controller (produces bin/fc-supervisor).
+#   ansible-playbook build-image.yml
+- name: Build the golden guest image
+  hosts: fleet
+  become: true
+  gather_facts: true
+  roles:
+    - role: golden_image

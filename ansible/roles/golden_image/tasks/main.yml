@@ -1,0 +1,60 @@
+---
+- name: Check the fc-supervisor binary exists on the controller
+  ansible.builtin.stat:
+    path: "{{ golden_image_supervisor_src }}"
+  delegate_to: localhost
+  run_once: true
+  become: false
+  register: golden_image_supervisor_stat
+
+- name: Assert the fc-supervisor binary was built
+  ansible.builtin.assert:
+    that:
+      - golden_image_supervisor_stat.stat.exists
+    fail_msg: "Missing {{ golden_image_supervisor_src }}. Run `make dist` on the controller first."
+  run_once: true
+
+- name: Install golden-image build dependencies
+  ansible.builtin.apt:
+    name: "{{ golden_image_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the build library directory
+  ansible.builtin.file:
+    path: "{{ golden_image_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Copy the fc-supervisor binary to the host
+  ansible.builtin.copy:
+    src: "{{ golden_image_supervisor_src }}"
+    dest: "{{ golden_image_lib_dir }}/fc-supervisor"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the Docker-free build script
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../image/build-mmdebstrap.sh"
+    dest: "{{ golden_image_lib_dir }}/build-mmdebstrap.sh"
+    owner: root
+    group: root
+    mode: "0755"
+
+# Not idempotent by nature — each build is a fresh content-addressed artifact.
+- name: Build the golden image (mmdebstrap; several minutes)
+  ansible.builtin.command: "{{ golden_image_lib_dir }}/build-mmdebstrap.sh"
+  environment:
+    SUPERVISOR_BIN: "{{ golden_image_lib_dir }}/fc-supervisor"
+    OUT_DIR: "{{ golden_image_out_dir }}"
+    SIZE_MB: "{{ golden_image_size_mb }}"
+  register: golden_image_build
+  changed_when: true
+
+- name: Report the built image sha
+  ansible.builtin.debug:
+    msg: "golden image: rootfs-{{ golden_image_build.stdout_lines | last }}.ext4.zst in {{ golden_image_out_dir }}"
