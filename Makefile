@@ -1,7 +1,7 @@
 BINS := fleet-agent fleet-reconciler fc-supervisor fleet-gateway
 DIST := bin
 
-.PHONY: build test vet dist clean
+.PHONY: build test vet check dist clean
 
 build:
 	go build ./...
@@ -11,6 +11,9 @@ test:
 
 vet:
 	go vet ./...
+
+# Pre-deploy gate: vet + the full test suite.
+check: vet test
 
 # Cross-compile static linux/amd64 binaries for the fleet host (the Ansible deploy role
 # copies these). fc-supervisor (M3) will be added here as CGO_ENABLED=0 too.

@@ -16,7 +16,8 @@ ansible/fact_cache/
 # Local secrets / inventories (never commit real hosts, keys, or PKI)
 ansible/inventory/local.yml
 ansible/inventory/*.local.yml
-secrets/
+secrets/*
+!secrets/README.md
 *.vault
 .vault_pass
 *.key
