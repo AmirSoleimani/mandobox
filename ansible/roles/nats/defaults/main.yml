@@ -7,8 +7,10 @@ nats_conf_dir: /etc/nats
 nats_conf: /etc/nats/nats-server.conf
 nats_user: nats
 
-# Client port. Guests reach this via the fleet host's nftables forward + masquerade (§7.4).
-nats_listen: "0.0.0.0:4222"
+# Single-machine build: bind the host anchor so guests reach NATS via the nftables input
+# accept, and it is NOT exposed on the public interface. Host-side clients use the same
+# address. M4 adds per-session JWT auth.
+nats_listen: "{{ fleet_host_gw_addr }}:4222"
 
 # Matches the guest supervisor's large stream-json log lines (§8.2).
 nats_max_payload: "8MB"

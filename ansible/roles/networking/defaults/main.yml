@@ -7,11 +7,6 @@ networking_packages:
 # (and, later, the egress proxy) have a stable address reachable from every guest tap.
 networking_anchor_iface: fleet0
 
-# Supernet from which fleet-agent allocates per-VM point-to-point /30s (no shared bridge).
-# Used only to scope the guest→NATS masquerade rule. Sourced from group_vars so the
-# nftables policy and the fleet-agent -guest-subnet flag never drift.
-networking_guest_subnet: "{{ fleet_guest_subnet }}"
-
 # Upstreams for the host resolver that guests are permitted to reach on UDP/TCP 53.
 networking_dns_upstreams:
   - "1.1.1.1"

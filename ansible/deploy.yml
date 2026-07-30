@@ -1,6 +1,7 @@
 ---
-# Deploy the fleet-host services (M2 fleet-agent + reconciler; M3 egress gateway).
-# Prerequisites (on the controller):
+# Deploy all services onto the single fleet host: fleet-agent + reconciler (M2), the egress
+# gateway, and NATS (M3). This is a personal, single-machine build — there is no separate
+# control plane. Prerequisites (on the controller):
 #   make dist                                                   # cross-compile binaries -> bin/
 #   scripts/gen-dev-certs.sh secrets/fleet-tls <fleet-host-ip>  # dev mTLS PKI (M2)
 #   printf '%s' "<real-anthropic-key>" > secrets/anthropic.key  # Tier-0 key (M3, §9)
@@ -12,3 +13,4 @@
   roles:
     - role: fleet_agent
     - role: egress_gateway
+    - role: nats
