@@ -5,12 +5,16 @@ work in a human-reviewed pull request. See [`docs/PLAN.md`](docs/PLAN.md) for th
 PRD, invariants, and build order — that document is authoritative; this README only
 tracks implementation state.
 
-## Planes
+**Scope:** a personal, **single-machine** tool (PLAN D5 = personal, not a product). One
+dedicated box runs the control-plane services and the fleet host together; there is no
+multi-tenancy and no separate control plane. See
+[`docs/decisions.md`](docs/decisions.md).
 
-| Plane | Where | Trust |
+## Trust zones
+
+| Zone | Where | Trust |
 |---|---|---|
-| Control plane | Hetzner Cloud CX | trusted |
-| Fleet host | Hetzner dedicated (Robot AX/EX, `/dev/kvm`) | trusted |
+| Host (control-plane services + fleet-agent + gateway + NATS) | one Hetzner dedicated box (Robot AX/EX, `/dev/kvm`) | trusted |
 | Guest | Firecracker microVM, one per session | **untrusted** |
 
 ## Build order (PLAN §14)
@@ -84,9 +88,8 @@ only linters + language unit tests, so there is no Docker in the image.
 ```sh
 make dist                                       # builds all four binaries
 printf '%s' "<real-anthropic-key>" > secrets/anthropic.key
-bash image/build.sh                             # golden image (Linux + Docker; CI does this)
-ansible-playbook control-plane.yml              # NATS on the control host
-ansible-playbook deploy.yml                     # fleet-agent + reconciler + gateway
+cd ansible && ansible-playbook build-image.yml  # golden image on the fleet host (mmdebstrap)
+ansible-playbook deploy.yml                      # fleet-agent + reconciler + gateway + NATS
 ```
 
 **Verified off-host:** the supervisor lifecycle (initial→PR, resume→push, agent-failure,

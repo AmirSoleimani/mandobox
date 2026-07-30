@@ -1,13 +1,12 @@
 # Hetzner setup
 
-What to provision before running the M1 playbook. **For M1 you need exactly one machine:
-the fleet host.** The control plane and GitHub org belong to later milestones — do not
-provision them yet.
+This is a personal, **single-machine** build: you need **exactly one machine — the fleet
+host** — which runs everything (fleet-agent, gateway, NATS, microVMs, and later Temporal).
+No separate control plane.
 
 | Role | Machine | Needed for |
 |---|---|---|
-| **Fleet host** | Hetzner **Robot dedicated** (AX/EX), bare metal | **M1** (now) |
-| Control plane | Hetzner **Cloud CX**, small, separate | M4 |
+| **Fleet host** | Hetzner **Robot dedicated** (AX/EX), bare metal | everything |
 | Source hosting | GitHub org (Chelodo) + GitHub App | M3/M4 |
 
 Why dedicated, not Cloud: Hetzner **Cloud has no `/dev/kvm`** (no nested virtualisation),
@@ -107,9 +106,9 @@ is enforced for the guest tap class, not for the host's own management ports.)
 
 ## Later milestones (not now)
 
-- **Control plane** — a separate small **Hetzner Cloud CX** running Temporal, NATS,
-  webhook-rx, and the credential minter (**M4**). Its NATS address is what
-  `fleet_nats_host` in `group_vars/fleet.yml` will point at.
+- **Control-plane services** (Temporal, webhook-rx, the credential minter — **M4**) run on
+  **this same box**, not a separate machine. Guests still can't reach them (nftables confines
+  the guest tap class to the anchor's DNS/gateway/NATS ports).
 - **GitHub** — migrate target repos to the **Chelodo org**, create the GitHub App
-  (`contents:write`, `pull_requests:write` only), and set branch protection (**M3/M4**,
-  PLAN §11).
+  (`contents:write`, `pull_requests:write`, `checks:read`), and set branch protection
+  (**M3/M4**, PLAN §11).

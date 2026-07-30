@@ -45,9 +45,9 @@ fleet_host_gw_prefixlen: 32
 # policy permits guests to reach this host:port now so the path exists (§10).
 fleet_egress_proxy_port: 8080
 
-# Control-plane NATS (Hetzner Cloud CX). PLACEHOLDER — override per environment.
-# 203.0.113.0/24 is TEST-NET-3; leaving it here will render a valid-but-inert rule.
-fleet_nats_host: 203.0.113.20
+# NATS. Single-machine build: NATS runs on THIS host, bound to the anchor, so guests reach
+# it there (an nftables input accept, not forwarding). Host-side clients use the same address.
+fleet_nats_host: "{{ fleet_host_gw_addr }}"
 fleet_nats_port: 4222
 
 # MMDS link-local (Firecracker metadata service).

@@ -17,8 +17,10 @@ need FLEET_SERVER_CA
 need IMAGE_SHA
 need REPO_CLONE_URL
 need GITHUB_TOKEN
-need NATS_URL
 command -v jq >/dev/null || { echo "dispatch: jq is required" >&2; exit 2; }
+
+# Single-machine build: NATS is host-local on the anchor, reachable by the guest there.
+NATS_URL="${NATS_URL:-nats://172.31.0.1:4222}"
 
 BASE_BRANCH="${BASE_BRANCH:-main}"
 PROMPT="${PROMPT:-Make a small, well-scoped improvement and open a PR.}"

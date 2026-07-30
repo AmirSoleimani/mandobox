@@ -1,14 +1,16 @@
 # Operator runbook (M1–M3)
 
-Linear guide from bare Hetzner boxes to a running fleet. Authoritative spec is
+Linear guide from a bare Hetzner box to a running fleet. Authoritative spec is
 [`PLAN.md`](PLAN.md); provisioning detail is in [`hetzner-setup.md`](hetzner-setup.md).
 
-## Machines
+## Machine
+
+This is a personal, **single-machine** build — one box runs everything. No separate control
+plane.
 
 | Host | Type | Runs |
 |---|---|---|
-| **fleet** | Hetzner **dedicated** (AX/EX, `/dev/kvm`, root FS = **XFS**) | fleet-agent, reconciler, gateway, microVMs |
-| **control** | Hetzner **Cloud CX** (small) | NATS (M3); Temporal etc. at M4 |
+| **fleet** | Hetzner **dedicated** (AX/EX, `/dev/kvm`, root FS = **XFS**) | fleet-agent, reconciler, gateway, NATS, microVMs |
 
 Full provisioning — including the **XFS root** choice (hard to change later) — is in
 [`hetzner-setup.md`](hetzner-setup.md). Do that first.
@@ -22,9 +24,9 @@ cd ansible && ansible-galaxy collection install -r requirements.yml && cd ..
 
 ## 1. Inventory
 
-Edit `ansible/inventory/hosts.yml` — set `ansible_host` for `fleet-host-01` and `control-01`
-(or copy it to `ansible/inventory/local.yml`, which is gitignored, and pass
-`-i inventory/local.yml`). Accept the host keys once (`ssh root@<ip> true`).
+Edit `ansible/inventory/hosts.yml` — set `ansible_host` for `fleet-host-01` (or copy it to
+`ansible/inventory/local.yml`, which is gitignored, and pass `-i inventory/local.yml`).
+Accept the host key once (`ssh root@<ip> true`).
 
 ## 2. Secrets
 
@@ -54,20 +56,15 @@ ansible-playbook smoke-test.yml    # expect: "smoke: PASS — microVM reached us
 That is the M1 acceptance gate (§14): idempotent re-run + a throwaway microVM reaching
 userspace.
 
-## 5. M3 — control-plane NATS
+## 5. Deploy the services (M2 + M3)
 
 ```sh
-ansible-playbook control-plane.yml   # installs nats-server on the control host
+ansible-playbook deploy.yml          # fleet-agent + reconciler + gateway + NATS
 ```
 
-> M3 NATS is **no-auth dev mode**; keep the port private (only the fleet host reaches it, via
-> nftables). M4 adds per-session JWT scoping.
-
-## 6. M2 + M3 — deploy the fleet-host services
-
-```sh
-ansible-playbook deploy.yml          # fleet-agent + reconciler + gateway
-```
+> NATS is bound to the host anchor (`172.31.0.1:4222`) — reachable by guests via nftables,
+> not on the public interface — and is **no-auth dev mode** for now. M4 adds per-session JWT
+> scoping.
 
 Verify the API is up (mTLS):
 
@@ -78,7 +75,7 @@ curl --cert secrets/fleet-tls/reconciler.crt \
      https://<fleet-host-ip>:9443/healthz          # -> {"status":"ok"}
 ```
 
-## 7. Golden image
+## 6. Golden image
 
 The image needs a **Linux box with a rootfs builder** (`mke2fs`) — so not your Mac, and not
 inside a guest µVM. The **fleet host itself qualifies**; you do not need a separate Docker
@@ -102,29 +99,28 @@ and `scp` it to `/var/lib/fleet/images/` on the fleet host.
 **C. Any Linux box with Docker:** `bash image/build.sh` → `scp` the artifact to the fleet
 host's `/var/lib/fleet/images/`.
 
-Note the `<sha>` the build prints — you pass it as `IMAGE_SHA` in step 9.
+Note the `<sha>` the build prints — you pass it as `IMAGE_SHA` in step 8.
 
-## 8. GitHub App
+## 7. GitHub App
 
 Follow [`github-setup.md`](github-setup.md): create the App under the Chelodo org, install on
 target repos, set branch protection + the `agent/*` ruleset. Needed for real PR runs.
 
-## 9. Dispatch a task by hand (M3 end-to-end)
+## 8. Dispatch a task by hand (M3 end-to-end)
 
 `scripts/dispatch-vm.sh` POSTs a launch to fleet-agent. It needs a **GitHub installation
 token** — until M4's credential minter exists, mint one manually (App JWT → installation
-token; `gh` or a short script). Then:
+token; `gh` or a short script). `NATS_URL` defaults to the host anchor, so you can omit it.
 
 ```sh
 export FLEET_URL=https://<fleet-host-ip>:9443
 export FLEET_TLS_CERT=secrets/fleet-tls/reconciler.crt
 export FLEET_TLS_KEY=secrets/fleet-tls/reconciler.key
 export FLEET_SERVER_CA=secrets/fleet-tls/server-ca.crt
-export IMAGE_SHA=<sha from step 7>
+export IMAGE_SHA=<sha from step 6>
 export REPO_SLUG=chelodo/yourrepo
 export REPO_CLONE_URL=https://github.com/chelodo/yourrepo.git
 export GITHUB_TOKEN=<installation token>
-export NATS_URL=nats://<control-ip>:4222
 export PROMPT="Add a /healthz endpoint"
 scripts/dispatch-vm.sh
 ```
@@ -136,5 +132,5 @@ credential in the guest** (`env` dump + workspace grep), and a push to `main` fr
 ## What is not wired yet (M4+)
 
 Temporal orchestration, the webhook receiver, the NATS↔Temporal bridge, the credential minter
-(automatic GitHub/gateway/NATS token issuance), Slack, and cost routing. Until then, dispatch
-is manual (step 9) and NATS is unauthenticated.
+(automatic GitHub/gateway/NATS token issuance), Slack, and cost routing — all co-located on
+the same box. Until then, dispatch is manual (step 8) and NATS is unauthenticated.
