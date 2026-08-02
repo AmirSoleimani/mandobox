@@ -161,13 +161,14 @@ Watch it in the Temporal UI, or query: `temporal workflow query --namespace flee
 --workflow-id <session_id> --type status`. Resume/close a PR arrives via webhook-rx (or inject
 a signal by hand: `temporal workflow signal --name review_comment --input '{…}'`).
 
-**Verified:** initial phase → PR; resume-on-review-comment (90s debounce); delivery-ID dedup;
-merge → workspace purged → workflow complete.
+**Verified end-to-end (all four M4 criteria):** initial phase → PR; resume-on-review-comment
+(90s debounce) → a real second commit on the same branch (session continuity); delivery-ID
+dedup; merge → workspace purged → workflow complete; no orphans left.
 
-**Known issues (follow-ups):** (1) a resume guest run can stall (Claude searching outside
-`/workspace/repo`, then `vm_lost` at the 180s liveness window) — session-continuity mechanism is
-in place but not cleanly verified end-to-end; (2) a wedged guest's firecracker can outlive
-`DestroyVM` teardown until it self-exits.
+The headless agent runs with `--permission-mode bypassPermissions` and `IS_SANDBOX=1` (the
+microVM is the sandbox, and Claude refuses bypass-as-root otherwise) so it can run bash tools;
+it must NOT run git/gh itself — the supervisor commits, pushes, and opens/updates the PR. The
+reaper additionally sweeps any Firecracker process left with no state dir (`ORPHAN_GRACE`).
 
 ## What is not wired yet (M5+)
 
