@@ -1,0 +1,33 @@
+# Temporal dynamic config for a single-node SQL-persistence deployment.
+# Derived from the upstream development-sql.yaml shipped with temporal-server.
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+frontend.workerVersioningDataAPIs:
+  - value: true
+frontend.workerVersioningWorkflowAPIs:
+  - value: true
+frontend.workerVersioningRuleAPIs:
+  - value: true
+system.enableDeploymentVersions:
+  - value: true
+system.enableDeployments:
+  - value: true
+component.nexusoperations.callback.endpoint.template:
+  - value: http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback
+component.callbacks.allowedAddresses:
+  - value:
+      - Pattern: "*"
+        AllowInsecure: true
+matching.queryWorkflowTaskTimeoutLogRate:
+  - value: 1.0
+history.ReplicationEnableUpdateWithNewTaskMerge:
+  - value: true
+history.hostLevelCacheMaxSize:
+  - value: 8192
+history.enableTransitionHistory:
+  - value: true
+history.enableChasm:
+  - value: true
+activity.enableStandalone:
+  - value: true

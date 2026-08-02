@@ -1,0 +1,81 @@
+{{ '#' }} {{ ansible_managed }}
+{{ '#' }} Temporal server config: single-binary, PostgreSQL persistence + SQL (not Elasticsearch)
+{{ '#' }} visibility. All services bind to localhost. See PLAN §6.
+log: {stdout: true, level: info}
+
+persistence:
+  defaultStore: default
+  visibilityStore: visibility
+  numHistoryShards: {{ temporal_num_history_shards }}
+  datastores:
+    default:
+      sql:
+        pluginName: "{{ temporal_pg_plugin }}"
+        databaseName: "{{ temporal_pg_db }}"
+        connectAddr: "{{ temporal_pg_host }}:{{ temporal_pg_port }}"
+        connectProtocol: "tcp"
+        user: "{{ temporal_pg_user }}"
+        password: "{{ temporal_pg_password }}"
+        maxConns: 20
+        maxIdleConns: 20
+        maxConnLifetime: "1h"
+    visibility:
+      sql:
+        pluginName: "{{ temporal_pg_plugin }}"
+        databaseName: "{{ temporal_pg_visibility_db }}"
+        connectAddr: "{{ temporal_pg_host }}:{{ temporal_pg_port }}"
+        connectProtocol: "tcp"
+        user: "{{ temporal_pg_user }}"
+        password: "{{ temporal_pg_password }}"
+        maxConns: 10
+        maxIdleConns: 10
+        maxConnLifetime: "1h"
+
+global:
+  membership:
+    maxJoinDuration: 30s
+    broadcastAddress: "127.0.0.1"
+  pprof:
+    port: 7936
+
+services:
+  frontend:
+    rpc:
+      grpcPort: {{ temporal_frontend_grpc_port }}
+      membershipPort: 6933
+      bindOnLocalHost: true
+      httpPort: {{ temporal_frontend_http_port }}
+  matching:
+    rpc:
+      grpcPort: 7235
+      membershipPort: 6935
+      bindOnLocalHost: true
+  history:
+    rpc:
+      grpcPort: 7234
+      membershipPort: 6934
+      bindOnLocalHost: true
+  worker:
+    rpc:
+      grpcPort: 7239
+      membershipPort: 6939
+      bindOnLocalHost: true
+
+clusterMetadata:
+  enableGlobalNamespace: false
+  failoverVersionIncrement: 10
+  masterClusterName: "active"
+  currentClusterName: "active"
+  clusterInformation:
+    active:
+      enabled: true
+      initialFailoverVersion: 1
+      rpcName: "frontend"
+      rpcAddress: "127.0.0.1:{{ temporal_frontend_grpc_port }}"
+
+dcRedirectionPolicy:
+  policy: "noop"
+
+dynamicConfigClient:
+  filepath: "{{ temporal_config_dir }}/config/dynamicconfig/development-sql.yaml"
+  pollInterval: "10s"

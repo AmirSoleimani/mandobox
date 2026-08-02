@@ -1,0 +1,6 @@
+{{ '#' }} {{ ansible_managed }}
+temporalGrpcAddress: {{ temporal_pg_host }}:{{ temporal_frontend_grpc_port }}
+host: {{ temporal_ui_host }}
+port: {{ temporal_ui_port }}
+enableUi: true
+defaultNamespace: {{ temporal_namespace }}

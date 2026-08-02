@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Temporal Web UI (localhost only)
+After=network-online.target temporal.service
+Wants=network-online.target
+Requires=temporal.service
+
+[Service]
+Type=simple
+User={{ temporal_user }}
+Group={{ temporal_user }}
+WorkingDirectory={{ temporal_ui_config_dir }}
+ExecStart=/usr/local/bin/temporal-ui-server --root {{ temporal_ui_config_dir }} --config config --env development start
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
