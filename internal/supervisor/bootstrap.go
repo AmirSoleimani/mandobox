@@ -19,6 +19,11 @@ func Bootstrap(ctx context.Context, platform Platform, runner Runner, mmdsBase s
 	if err := runner.Run(ctx, "ip", "link", "set", "eth0", "up"); err != nil {
 		return BootConfig{}, fmt.Errorf("bootstrap: eth0 up: %w", err)
 	}
+	// A temporary link-local address so the guest can reach MMDS (169.254.169.254) before it
+	// learns its real IP — which itself comes from MMDS. MMDS is on-link within 169.254.0.0/16.
+	if err := runner.Run(ctx, "ip", "addr", "add", "169.254.0.2/16", "dev", "eth0"); err != nil {
+		return BootConfig{}, fmt.Errorf("bootstrap: mmds link-local addr: %w", err)
+	}
 	if err := runner.Run(ctx, "ip", "route", "add", mmdsIP, "dev", "eth0"); err != nil {
 		return BootConfig{}, fmt.Errorf("bootstrap: mmds route: %w", err)
 	}

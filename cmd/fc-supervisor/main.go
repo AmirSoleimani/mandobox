@@ -16,6 +16,15 @@ import (
 )
 
 func main() {
+	// As PID 1 the kernel gives us no environment, so set a PATH before running anything —
+	// otherwise ip/git/gh/claude and the tools the agent shells out to are unfindable.
+	if os.Getenv("PATH") == "" {
+		_ = os.Setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin")
+	}
+	if os.Getenv("HOME") == "" {
+		_ = os.Setenv("HOME", "/root")
+	}
+
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
 
@@ -27,6 +36,13 @@ func main() {
 		fatal(log, platform, "bootstrap", err)
 	}
 	log.Info("booted", "session_id", cfg.SessionID, "repo", cfg.Repo.Slug, "mode", cfg.Task.Mode)
+
+	// Route git/gh through the host egress gateway (the only sanctioned egress path). MMDS is
+	// already read above; NATS uses a raw TCP connection unaffected by these. NO_PROXY keeps
+	// MMDS and loopback direct.
+	_ = os.Setenv("HTTPS_PROXY", cfg.LLM.BaseURL)
+	_ = os.Setenv("HTTP_PROXY", cfg.LLM.BaseURL)
+	_ = os.Setenv("NO_PROXY", "169.254.169.254,localhost,127.0.0.1")
 
 	if err := supervisor.ConfigureNetwork(ctx, runner, cfg.Network, "/etc/resolv.conf"); err != nil {
 		fatal(log, platform, "network", err)
