@@ -109,7 +109,7 @@ func (s *Supervisor) runAgent(ctx context.Context) (Result, error) {
 		spec.Resume = true
 		spec.ClaudeSessionID = s.readClaudeSession()
 	} else {
-		spec.Prompt = s.cfg.Task.Prompt
+		spec.Prompt = autonomousPreamble + s.cfg.Task.Prompt
 	}
 	return s.deps.Agent.Run(ctx, spec, func(line []byte) {
 		if err := s.deps.Bus.Log(line); err != nil {
@@ -251,10 +251,17 @@ func (s *Supervisor) prBody(res Result) string {
 	return b.String()
 }
 
+// autonomousPreamble prefixes every task: the agent runs headless with no human to answer
+// questions, so it must make reasonable assumptions and finish rather than ask (§8.3).
+const autonomousPreamble = "You are running non-interactively, with no human available to " +
+	"answer questions. Make reasonable assumptions and COMPLETE the task by editing files — " +
+	"do not ask for clarification or stop to confirm.\n\n"
+
 // resumePrompt assembles a resume instruction, folding in any queued steering messages, with
 // an explicit directive to push to the same branch and NOT open a new PR (§8.2).
 func resumePrompt(instructions, queued []string) string {
 	var b strings.Builder
+	b.WriteString(autonomousPreamble)
 	b.WriteString("Continue work on this branch. Address the following feedback, then commit.\n")
 	b.WriteString("Do NOT open a new pull request — push to the existing branch.\n\n")
 	for _, in := range instructions {

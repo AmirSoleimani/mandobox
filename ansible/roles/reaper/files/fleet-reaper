@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # fleet-reaper — host-side safety net that kills Firecracker microVMs which have
-# exceeded their absolute lifetime or gone silent. PLAN §7.6, invariant I8.
+# exceeded their absolute lifetime or gone silent, and cleans up after VMs that died on
+# their own. PLAN §7.6, invariant I8.
 #
 # It NEVER touches workspace volumes — a reaped VM's PR may still be open; only the
-# transient run-state dir under FLEET_VM_STATE_DIR is removed.
+# transient run-state dir under FLEET_VM_STATE_DIR and the VM's tap device are removed.
 #
-# Per-VM state (written by fleet-agent, M2) lives at $FLEET_VM_STATE_DIR/<session_id>/:
-#   firecracker.pid  required — pid of the Firecracker process
-#   started_at       optional — epoch seconds of launch (else ps elapsed time is used)
+# Per-VM state (written by fleet-agent) lives at $FLEET_VM_STATE_DIR/<session_id>/:
+#   vm.json          full record (includes the tap name)
+#   firecracker.pid  pid of the Firecracker process
+#   started_at       epoch seconds of launch (else ps elapsed time is used)
 #   heartbeat        optional — mtime refreshed while the VM is healthy
 #
-# In M1 nothing populates that directory, so this is a correct no-op. This is the host
-# safety net only; Temporal + the reconciliation loop are authoritative (§7.7).
+# This is the host safety net only; Temporal + the reconciliation loop are authoritative.
 set -euo pipefail
 
 STATE_DIR="${FLEET_VM_STATE_DIR:-/run/fleet/vms}"
@@ -35,6 +36,24 @@ reap() {
   fi
 }
 
+# del_tap <vmdir> — delete the VM's tap device (from vm.json). A VM that died on its own
+# leaves its tap behind; stale taps collide on the next launch (same /30), so remove it.
+del_tap() {
+  local vmdir="$1" tap=""
+  if [ -f "${vmdir}vm.json" ]; then
+    tap="$(jq -r '.tap // empty' "${vmdir}vm.json" 2>/dev/null || true)"
+  fi
+  if [ -n "${tap}" ] && ip link show "${tap}" >/dev/null 2>&1; then
+    ip link del "${tap}" 2>/dev/null && log "deleted tap ${tap}" || true
+  fi
+}
+
+# remove_vm <vmdir> — delete the tap and the transient run-state dir. NEVER the workspace.
+remove_vm() {
+  del_tap "$1"
+  rm -rf "$1"
+}
+
 [ -d "${STATE_DIR}" ] || exit 0
 now="$(date +%s)"
 
@@ -45,14 +64,14 @@ for vmdir in "${STATE_DIR}"/*/; do
   [ -f "${pidfile}" ] || continue
   pid="$(cat "${pidfile}" 2>/dev/null || true)"
   if [ -z "${pid}" ]; then
-    rm -rf "${vmdir}"
+    remove_vm "${vmdir}"
     continue
   fi
 
-  # Already gone: clear stale bookkeeping (workspace untouched).
+  # Already gone: clear stale bookkeeping + tap (workspace untouched).
   if ! kill -0 "${pid}" 2>/dev/null; then
     log "clearing stale state for ${sid} (pid ${pid} not running)"
-    rm -rf "${vmdir}"
+    remove_vm "${vmdir}"
     continue
   fi
 
@@ -60,7 +79,7 @@ for vmdir in "${STATE_DIR}"/*/; do
   comm="$(cat "/proc/${pid}/comm" 2>/dev/null || true)"
   if [ "${comm}" != "firecracker" ]; then
     log "pid ${pid} for ${sid} is '${comm}', not firecracker — dropping stale state"
-    rm -rf "${vmdir}"
+    remove_vm "${vmdir}"
     continue
   fi
 
@@ -89,6 +108,6 @@ for vmdir in "${STATE_DIR}"/*/; do
 
   if [ -n "${reason}" ]; then
     reap "${pid}" "${sid}" "${reason}"
-    rm -rf "${vmdir}" # transient state only — NOT the workspace volume (§7.6)
+    remove_vm "${vmdir}" # transient state + tap only — NOT the workspace volume (§7.6)
   fi
 done
