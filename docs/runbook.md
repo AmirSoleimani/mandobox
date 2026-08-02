@@ -132,8 +132,44 @@ Expected (M3 acceptance, §14): a PR opened by the **App bot** on an `agent/*` b
 credential in the guest** (`env` dump + workspace grep), and a push to `main` from the App
 **rejected** by GitHub.
 
-## What is not wired yet (M4+)
+## M4 — Temporal control plane (deployed)
 
-Temporal orchestration, the webhook receiver, the NATS↔Temporal bridge, the credential minter
-(automatic GitHub/gateway/NATS token issuance), Slack, and cost routing — all co-located on
-the same box. Until then, dispatch is manual (step 8) and NATS is unauthenticated.
+Temporal now drives the full task lifecycle. Deploy with `ansible-playbook deploy.yml --tags
+temporal,control_plane` (prerequisites on the controller: `make dist`; the GitHub App key at
+`secrets/chelodocloudagent.*.private-key.pem`; `openssl rand -hex 24 > secrets/webhook-secret`;
+`openssl rand -hex 24 > secrets/temporal/postgres-password`).
+
+**Services (all on the box, localhost-bound):**
+
+| Service | Bind | Role |
+|---|---|---|
+| postgresql | 127.0.0.1:5432 | Temporal persistence + SQL visibility |
+| temporal | 127.0.0.1:7233 (gRPC) | workflow engine, namespace `fleet` |
+| temporal-ui | 127.0.0.1:8233 | Web UI — `ssh -L 8233:127.0.0.1:8233 root@<host>` |
+| fleet-worker | — | hosts PRWorkflow + activities (task queue `fleet-pr`) |
+| webhook-rx | 127.0.0.1:8088 | GitHub webhooks → Temporal signals (needs a public ingress/tunnel) |
+| nats-bridge | — | archives guest event/log streams to `/var/lib/fleet/logs` |
+
+**Dispatch a task (replaces the manual step 8):**
+
+```sh
+IMAGE_SHA=<sha> REPO_CLONE_URL=https://github.com/<owner>/<repo>.git REPO_SLUG=<owner>/<repo> \
+  PROMPT="…" /usr/local/bin/fleet-dispatch     # run on the box
+```
+
+Watch it in the Temporal UI, or query: `temporal workflow query --namespace fleet
+--workflow-id <session_id> --type status`. Resume/close a PR arrives via webhook-rx (or inject
+a signal by hand: `temporal workflow signal --name review_comment --input '{…}'`).
+
+**Verified:** initial phase → PR; resume-on-review-comment (90s debounce); delivery-ID dedup;
+merge → workspace purged → workflow complete.
+
+**Known issues (follow-ups):** (1) a resume guest run can stall (Claude searching outside
+`/workspace/repo`, then `vm_lost` at the 180s liveness window) — session-continuity mechanism is
+in place but not cleanly verified end-to-end; (2) a wedged guest's firecracker can outlive
+`DestroyVM` teardown until it self-exits.
+
+## What is not wired yet (M5+)
+
+Slack thread rendering + `needs_input` round-trip, the final cost summary, and LiteLLM model
+routing (§10). NATS is still unauthenticated (single box); per-session JWT scoping is deferred.
