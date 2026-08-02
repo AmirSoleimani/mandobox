@@ -24,7 +24,8 @@ func TestInstanceDir(t *testing.T) {
 	cfg.JailDir = "/srv/jailer"
 	d := NewFirecrackerDriver(cfg, newFakeRunner())
 	id := session.MustParse("s_0123456789ABCDEFGHJKMNPQRS")
-	want := "/srv/jailer/firecracker/s_0123456789ABCDEFGHJKMNPQRS"
+	// jailer rejects underscores, so the chroot dir uses the hyphenated id.
+	want := "/srv/jailer/firecracker/s-0123456789ABCDEFGHJKMNPQRS"
 	if got := d.instanceDir(id); got != want {
 		t.Errorf("instanceDir = %q, want %q", got, want)
 	}

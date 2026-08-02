@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -37,8 +38,26 @@ func NewFirecrackerDriver(cfg Config, runner Runner) *FirecrackerDriver {
 	return &FirecrackerDriver{cfg: cfg, runner: runner}
 }
 
+// execFileName is the chroot subdirectory jailer derives from --exec-file. jailer
+// canonicalizes the path (resolving symlinks) and uses the real basename, so when
+// FirecrackerBin is a symlink to firecracker-vX.Y.Z-x86_64 the chroot lives under that
+// name, not "firecracker". We must match jailer exactly or the API socket is never found.
+func (d *FirecrackerDriver) execFileName() string {
+	real, err := filepath.EvalSymlinks(d.cfg.FirecrackerBin)
+	if err != nil {
+		real = d.cfg.FirecrackerBin
+	}
+	return filepath.Base(real)
+}
+
+// jailerID returns a jailer-safe instance id. Jailer rejects underscores (it allows only
+// alphanumerics and hyphens), so the session_id's "s_" prefix becomes "s-".
+func jailerID(id session.ID) string {
+	return strings.ReplaceAll(id.String(), "_", "-")
+}
+
 func (d *FirecrackerDriver) instanceDir(id session.ID) string {
-	return filepath.Join(d.cfg.JailDir, "firecracker", id.String())
+	return filepath.Join(d.cfg.JailDir, d.execFileName(), jailerID(id))
 }
 
 // Launch runs the PLAN §7.1 sequence: jailer → place resources in the chroot → configure
@@ -70,7 +89,7 @@ func (d *FirecrackerDriver) Launch(ctx context.Context, spec LaunchSpec) (Launch
 	}()
 
 	if err := waitForSocket(sock, socketWait); err != nil {
-		return LaunchResult{}, fmt.Errorf("launch: %w", err)
+		return LaunchResult{}, fmt.Errorf("launch: %w; jailer output: %s", err, d.readJailerLog(spec.Session))
 	}
 	if err := d.placeResources(ctx, spec, root); err != nil {
 		return LaunchResult{}, err
@@ -88,7 +107,7 @@ func (d *FirecrackerDriver) Launch(ctx context.Context, spec LaunchSpec) (Launch
 // the VM survives a fleet-agent restart; a goroutine reaps it when it eventually exits.
 func (d *FirecrackerDriver) startJailer(id session.ID) (int, error) {
 	args := []string{
-		"--id", id.String(),
+		"--id", jailerID(id),
 		"--uid", fmt.Sprintf("%d", d.cfg.JailUID),
 		"--gid", fmt.Sprintf("%d", d.cfg.JailGID),
 		"--chroot-base-dir", d.cfg.JailDir,
@@ -97,12 +116,33 @@ func (d *FirecrackerDriver) startJailer(id session.ID) (int, error) {
 	}
 	cmd := exec.Command(d.cfg.JailerBin, args...) //nolint:gosec // args are internal, not user input
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	// Capture jailer/firecracker output; Go sends unset child fds to /dev/null, which would
+	// hide startup errors. The child keeps its own dup, so we close our copy after Start.
+	if lf, err := os.OpenFile(d.jailerLogPath(id), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600); err == nil {
+		cmd.Stdout = lf
+		cmd.Stderr = lf
+		defer func() { _ = lf.Close() }()
+	}
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("start jailer: %w", err)
 	}
 	pid := cmd.Process.Pid
 	go func() { _ = cmd.Wait() }() // reap on eventual exit; VM outlives this process's parent
 	return pid, nil
+}
+
+// jailerLogPath is where jailer/firecracker output is captured for debugging.
+func (d *FirecrackerDriver) jailerLogPath(id session.ID) string {
+	return filepath.Join(d.cfg.RunStateDir, "jailer-"+id.String()+".log")
+}
+
+// readJailerLog returns the captured jailer/firecracker output (for error context).
+func (d *FirecrackerDriver) readJailerLog(id session.ID) string {
+	b, err := os.ReadFile(d.jailerLogPath(id))
+	if err != nil {
+		return "(no jailer log)"
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // placeResources reflink-copies the rootfs and hardlinks the workspace and kernel into the
@@ -119,7 +159,10 @@ func (d *FirecrackerDriver) placeResources(ctx context.Context, spec LaunchSpec,
 	if err := linkOrCopy(ctx, d.runner, spec.KernelPath, filepath.Join(root, "vmlinux")); err != nil {
 		return fmt.Errorf("place kernel: %w", err)
 	}
-	for _, f := range []string{rootfs, filepath.Join(root, "workspace.ext4"), filepath.Join(root, "vmlinux")} {
+	// rootfs is a per-VM reflink copy and workspace a per-VM volume, so hand them to the
+	// jailed uid. The kernel is a shared, world-readable inode — chowning its hardlink would
+	// retarget the shared kernel's ownership, so leave it.
+	for _, f := range []string{rootfs, filepath.Join(root, "workspace.ext4")} {
 		if err := os.Chown(f, d.cfg.JailUID, d.cfg.JailGID); err != nil {
 			return fmt.Errorf("chown %s: %w", filepath.Base(f), err)
 		}
@@ -143,9 +186,11 @@ func (d *FirecrackerDriver) configure(ctx context.Context, spec LaunchSpec, sock
 			"kernel_image_path": "/vmlinux",
 			"boot_args":         bootArgs,
 		}},
+		// Writable: each VM boots its own reflink copy, so the guest can write /etc/resolv.conf,
+		// ~/.gitconfig, caches, etc. The copy is ephemeral and discarded on destroy.
 		{"/drives/rootfs", map[string]any{
 			"drive_id": "rootfs", "path_on_host": "/rootfs.ext4",
-			"is_root_device": true, "is_read_only": true,
+			"is_root_device": true, "is_read_only": false,
 		}},
 		{"/drives/workspace", map[string]any{
 			"drive_id": "workspace", "path_on_host": "/workspace.ext4",
@@ -164,7 +209,7 @@ func (d *FirecrackerDriver) configure(ctx context.Context, spec LaunchSpec, sock
 			"ipv4_address": d.cfg.mmdsAddr(),
 		}},
 		{"/mmds", spec.MMDS},
-		{"/actions", map[string]any{"action_type": "InstantStart"}},
+		{"/actions", map[string]any{"action_type": "InstanceStart"}},
 	}
 	for _, s := range steps {
 		if err := udsPut(ctx, client, s.path, s.body); err != nil {
@@ -206,8 +251,13 @@ func deriveMAC(ipv4 string) string {
 }
 
 // linkOrCopy hardlinks src to dst (same-FS, free), falling back to a copy across
-// filesystems.
+// filesystems. It resolves symlinks first so the target is the real file — otherwise a
+// hardlink to a symlink (e.g. the kernel's vmlinux -> vmlinux-6.1.155) dangles inside the
+// chroot and Firecracker can't open it.
 func linkOrCopy(ctx context.Context, runner Runner, src, dst string) error {
+	if real, err := filepath.EvalSymlinks(src); err == nil {
+		src = real
+	}
 	if err := os.Link(src, dst); err == nil {
 		return nil
 	}
