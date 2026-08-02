@@ -38,7 +38,7 @@ func TestAgentEnvStripsAnthropicAPIKey(t *testing.T) {
 func TestClaudeArgs(t *testing.T) {
 	initial := claudeArgs(AgentSpec{Prompt: "do it", Model: "claude-sonnet-5"})
 	if !slices.Contains(initial, "-p") || !slices.Contains(initial, "stream-json") ||
-		!slices.Contains(initial, "acceptEdits") || !slices.Contains(initial, "--model") {
+		!slices.Contains(initial, "bypassPermissions") || !slices.Contains(initial, "--model") {
 		t.Fatalf("initial args = %v", initial)
 	}
 	if slices.Contains(initial, "--resume") {
