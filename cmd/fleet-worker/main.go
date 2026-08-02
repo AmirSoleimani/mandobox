@@ -19,6 +19,7 @@ func main() {
 		natsURL, gatewayURL              string
 		appID, appKeyPath, org           string
 		instID, botUser, botEmail        string
+		slackToken, slackChannel         string
 	}{
 		temporalAddr: env("TEMPORAL_ADDRESS", "127.0.0.1:7233"),
 		namespace:    env("TEMPORAL_NAMESPACE", "fleet"),
@@ -34,6 +35,8 @@ func main() {
 		instID:       os.Getenv("GITHUB_INSTALLATION_ID"),
 		botUser:      env("GITHUB_BOT_USER", "fleet-agent[bot]"),
 		botEmail:     env("GITHUB_BOT_EMAIL", "fleet-agent[bot]@users.noreply.github.com"),
+		slackToken:   os.Getenv("SLACK_BOT_TOKEN"),
+		slackChannel: os.Getenv("SLACK_CHANNEL"),
 	}
 	if cfg.appID == "" || cfg.appKeyPath == "" {
 		log.Fatal("GITHUB_APP_ID and GITHUB_APP_KEY are required")
@@ -59,12 +62,14 @@ func main() {
 	defer c.Close()
 
 	acts := &control.Activities{
-		Fleet:      fleet,
-		App:        app,
-		NATSURL:    cfg.natsURL,
-		GatewayURL: cfg.gatewayURL,
-		BotUser:    cfg.botUser,
-		BotEmail:   cfg.botEmail,
+		Fleet:         fleet,
+		App:           app,
+		NATSURL:       cfg.natsURL,
+		GatewayURL:    cfg.gatewayURL,
+		BotUser:       cfg.botUser,
+		BotEmail:      cfg.botEmail,
+		SlackBotToken: cfg.slackToken,
+		SlackChannel:  cfg.slackChannel,
 	}
 
 	w := worker.New(c, control.TaskQueue, worker.Options{})

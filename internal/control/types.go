@@ -66,6 +66,9 @@ type WorkflowInput struct {
 	VCPUs      int    `json:"vcpus"`
 	MemMiB     int    `json:"mem_mib"`
 	Policy     Policy `json:"policy"`
+	// SlackChannel overrides the worker's default channel (set when dispatched from Slack so
+	// the thread lands in the channel where /fleet was run). Empty → the default channel.
+	SlackChannel string `json:"slack_channel"`
 }
 
 // State is the queryable workflow state block (PLAN §6.1). Returned by the `status` query.
@@ -82,6 +85,7 @@ type State struct {
 	CumulativeCostUSD   float64  `json:"cumulative_cost_usd"`
 	CumulativeTokens    int      `json:"cumulative_tokens"`
 	PendingInstructions []string `json:"pending_instructions"`
+	SlackChannel        string   `json:"slack_channel"`
 	SlackThreadTS       string   `json:"slack_thread_ts"`
 	Phase               string   `json:"phase"` // human-readable current step
 }

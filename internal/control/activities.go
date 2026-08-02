@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/acme/fleet/internal/supervisor"
@@ -13,12 +14,15 @@ import (
 
 // Activities holds the side-effecting collaborators. One instance is registered on the worker.
 type Activities struct {
-	Fleet      *FleetClient
-	App        *GitHubApp
-	NATSURL    string
-	GatewayURL string // egress gateway base — the guest's LLM base_url (§9)
-	BotUser    string
-	BotEmail   string
+	Fleet         *FleetClient
+	App           *GitHubApp
+	NATSURL       string
+	GatewayURL    string // egress gateway base — the guest's LLM base_url (§9)
+	BotUser       string
+	BotEmail      string
+	SlackBotToken string // xoxb- token for chat.postMessage; empty → Slack posts are no-ops
+	SlackChannel  string // default channel for the session thread
+	slackClient   *http.Client
 }
 
 // MintCredentials issues the per-session Tier-1 tokens (I1, §9). The Anthropic key is never
