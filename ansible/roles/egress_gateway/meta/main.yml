@@ -8,6 +8,10 @@ galaxy_info:
     - name: Debian
       versions:
         - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
   galaxy_tags:
     - fleet
     - firecracker

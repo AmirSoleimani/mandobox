@@ -59,6 +59,7 @@ cat >"${WORK}/vmconfig.json" <<CFG
     "initrd_path": "${WORK}/initramfs.cpio.gz",
     "boot_args": "console=ttyS0 reboot=k panic=1 pci=off rdinit=/init"
   },
+  "drives": [],
   "machine-config": {
     "vcpu_count": 1,
     "mem_size_mib": 256
