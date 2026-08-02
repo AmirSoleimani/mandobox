@@ -52,8 +52,9 @@ cleanup() {
 trap cleanup EXIT
 
 echo "build: mmdebstrap base (${ID:-debian} ${SUITE}, components ${COMPONENTS})"
+# minbase omits apt (it is priority:important, not required); the chroot installers need it.
 mmdebstrap --variant=minbase --components="$COMPONENTS" \
-  --include=ca-certificates,curl,gnupg,git,jq,ripgrep,fd-find,python3,python3-venv,openssh-client,less,procps,iproute2,e2fsprogs \
+  --include=apt,ca-certificates,curl,gnupg,git,jq,ripgrep,fd-find,python3,python3-venv,openssh-client,less,procps,iproute2,e2fsprogs \
   "$SUITE" "$ROOTFS" "$MIRROR"
 
 # --- run installers inside the rootfs (needs network + pseudo-filesystems) ---
