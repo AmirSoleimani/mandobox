@@ -11,8 +11,24 @@ set -euo pipefail
 SUPERVISOR_BIN="${SUPERVISOR_BIN:?set SUPERVISOR_BIN to the prebuilt fc-supervisor binary}"
 OUT_DIR="${OUT_DIR:-/var/lib/fleet/images}"
 SIZE_MB="${SIZE_MB:-2048}"
-SUITE="${SUITE:-bookworm}"
-MIRROR="${MIRROR:-http://deb.debian.org/debian}"
+# Build a rootfs matching the HOST distro so mmdebstrap uses the host's own apt keyring
+# (a Debian rootfs on an Ubuntu host fails signature verification — Ubuntu's apt does not
+# trust Debian's signing keys, and vice versa). The guest being Ubuntu vs Debian makes no
+# functional difference; it just runs Node + Claude Code + fc-supervisor.
+# shellcheck disable=SC1091
+. /etc/os-release
+case "${ID:-debian}" in
+  ubuntu)
+    SUITE="${SUITE:-${VERSION_CODENAME:-jammy}}"
+    MIRROR="${MIRROR:-http://archive.ubuntu.com/ubuntu}"
+    COMPONENTS="${COMPONENTS:-main,universe}" # ripgrep/fd-find live in universe on Ubuntu
+    ;;
+  *)
+    SUITE="${SUITE:-bookworm}"
+    MIRROR="${MIRROR:-http://deb.debian.org/debian}"
+    COMPONENTS="${COMPONENTS:-main}"
+    ;;
+esac
 
 NODE_MAJOR="${NODE_MAJOR:-22}"
 CLAUDE_CODE_VERSION="${CLAUDE_CODE_VERSION:-2.1.220}"
@@ -35,8 +51,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "build: mmdebstrap base ($SUITE)"
-mmdebstrap --variant=minbase \
+echo "build: mmdebstrap base (${ID:-debian} ${SUITE}, components ${COMPONENTS})"
+mmdebstrap --variant=minbase --components="$COMPONENTS" \
   --include=ca-certificates,curl,gnupg,git,jq,ripgrep,fd-find,python3,python3-venv,openssh-client,less,procps,iproute2,e2fsprogs \
   "$SUITE" "$ROOTFS" "$MIRROR"
 
