@@ -57,8 +57,11 @@ func (linuxPlatform) UnmountWorkspace(target string) error {
 
 func (linuxPlatform) Sync() { unix.Sync() }
 
-// PowerOff syncs and powers the microVM off cleanly.
+// PowerOff syncs and stops the microVM. It issues a RESTART, not POWER_OFF: Firecracker
+// exits when the guest resets (with reboot=k on the cmdline, a keyboard reset) but merely
+// halts — leaving the VMM process alive — on power-off. Exiting lets the reaper clean up the
+// process, tap, and state.
 func (linuxPlatform) PowerOff() error {
 	unix.Sync()
-	return unix.Reboot(unix.LINUX_REBOOT_CMD_POWER_OFF)
+	return unix.Reboot(unix.LINUX_REBOOT_CMD_RESTART)
 }
