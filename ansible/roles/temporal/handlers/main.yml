@@ -1,0 +1,14 @@
+---
+- name: Reload systemd daemon (temporal)
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart temporal
+  ansible.builtin.systemd_service:
+    name: temporal
+    state: restarted
+
+- name: Restart temporal-ui
+  ansible.builtin.systemd_service:
+    name: temporal-ui
+    state: restarted

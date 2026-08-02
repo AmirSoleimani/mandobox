@@ -12,5 +12,10 @@
   gather_facts: false
   roles:
     - role: fleet_agent
+      tags: [fleet_agent]
     - role: egress_gateway
+      tags: [egress_gateway]
     - role: nats
+      tags: [nats]
+    - role: temporal
+      tags: [temporal]

@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Temporal Server (native, postgres-backed)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User={{ temporal_user }}
+Group={{ temporal_user }}
+WorkingDirectory={{ temporal_config_dir }}
+ExecStart=/usr/local/bin/temporal-server --root {{ temporal_config_dir }} --env development --config config start
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

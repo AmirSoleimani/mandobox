@@ -1,0 +1,48 @@
+---
+# Temporal control plane: native temporal-server + PostgreSQL, plus the CLI and Web UI.
+# Everything binds to localhost — the box has a public IP and none of these speak auth in
+# v1, so operator access is over an SSH tunnel (ssh -L 8233:127.0.0.1:8233 root@<host>).
+temporal_version: "1.31.2"
+temporal_cli_version: "1.8.2"
+temporal_ui_version: "2.53.0"
+temporal_arch: amd64
+
+temporal_user: temporal
+temporal_dl_dir: /opt/temporal
+temporal_config_dir: /etc/temporal
+temporal_ui_config_dir: /etc/temporal-ui
+temporal_data_dir: /var/lib/fleet/temporal
+
+# Namespace our workflows live in, and its closed-workflow retention.
+temporal_namespace: fleet
+temporal_namespace_retention: 720h
+
+# Custom search attributes (PLAN §11) — the review-round count is the metric that matters.
+temporal_search_attributes:
+  - {name: repo, type: Keyword}
+  - {name: pr_number, type: Int}
+  - {name: review_round, type: Int}
+
+# PostgreSQL. The password is a Tier-0 secret kept on the controller, never committed.
+temporal_pg_host: 127.0.0.1
+temporal_pg_port: 5432
+temporal_pg_user: temporal
+temporal_pg_db: temporal
+temporal_pg_visibility_db: temporal_visibility
+temporal_pg_plugin: postgres12
+temporal_pg_password_src: "{{ playbook_dir }}/../secrets/temporal/postgres-password"
+temporal_pg_password: "{{ lookup('file', temporal_pg_password_src) | trim }}"
+
+# Ports (all localhost). gRPC frontend is what the Go worker/clients dial.
+temporal_frontend_grpc_port: 7233
+temporal_frontend_http_port: 7243
+temporal_num_history_shards: 4
+temporal_ui_host: 127.0.0.1
+temporal_ui_port: 8233
+
+temporal_server_url: >-
+  https://github.com/temporalio/temporal/releases/download/v{{ temporal_version }}/temporal_{{ temporal_version }}_linux_{{ temporal_arch }}.tar.gz
+temporal_cli_url: >-
+  https://github.com/temporalio/cli/releases/download/v{{ temporal_cli_version }}/temporal_cli_{{ temporal_cli_version }}_linux_{{ temporal_arch }}.tar.gz
+temporal_ui_url: >-
+  https://github.com/temporalio/ui-server/releases/download/v{{ temporal_ui_version }}/ui-server_{{ temporal_ui_version }}_linux_{{ temporal_arch }}.tar.gz

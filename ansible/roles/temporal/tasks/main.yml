@@ -1,0 +1,298 @@
+---
+# ---------------------------------------------------------------------------
+# PostgreSQL
+# ---------------------------------------------------------------------------
+- name: Install PostgreSQL
+  ansible.builtin.apt:
+    name:
+      - postgresql
+      - postgresql-contrib
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure PostgreSQL is running
+  ansible.builtin.systemd_service:
+    name: postgresql
+    enabled: true
+    state: started
+
+- name: Create the temporal database role
+  # DO block is idempotent; CREATE ROLE has no IF NOT EXISTS. Password is set every run so
+  # rotating the controller secret and re-running converges.
+  ansible.builtin.command:
+    cmd: >-
+      psql -v ON_ERROR_STOP=1 -c
+      "DO $$ BEGIN
+         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{{ temporal_pg_user }}') THEN
+           CREATE ROLE {{ temporal_pg_user }} LOGIN PASSWORD '{{ temporal_pg_password }}';
+         ELSE
+           ALTER ROLE {{ temporal_pg_user }} PASSWORD '{{ temporal_pg_password }}';
+         END IF;
+       END $$;"
+  become: true
+  become_user: postgres
+  changed_when: false
+  no_log: true
+
+- name: Create the temporal databases
+  ansible.builtin.command:
+    cmd: "createdb -O {{ temporal_pg_user }} {{ item }}"
+  become: true
+  become_user: postgres
+  register: temporal_createdb
+  changed_when: "temporal_createdb.rc == 0"
+  failed_when: >-
+    temporal_createdb.rc != 0 and 'already exists' not in temporal_createdb.stderr
+  loop:
+    - "{{ temporal_pg_db }}"
+    - "{{ temporal_pg_visibility_db }}"
+
+# ---------------------------------------------------------------------------
+# Binaries: temporal-server (+ sql-tool, tdbg), temporal CLI, ui-server
+# ---------------------------------------------------------------------------
+- name: Create download + config directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.owner | default('root') }}"
+    mode: "0755"
+  loop:
+    - {path: "{{ temporal_dl_dir }}"}
+    - {path: "{{ temporal_dl_dir }}/server-{{ temporal_version }}"}
+    - {path: "{{ temporal_dl_dir }}/cli-{{ temporal_cli_version }}"}
+    - {path: "{{ temporal_dl_dir }}/ui-{{ temporal_ui_version }}"}
+    - {path: "{{ temporal_config_dir }}/config/dynamicconfig"}
+    - {path: "{{ temporal_ui_config_dir }}/config"}
+    - {path: "{{ temporal_data_dir }}", owner: "{{ temporal_user }}"}
+
+- name: Download the temporal server bundle
+  ansible.builtin.get_url:
+    url: "{{ temporal_server_url }}"
+    dest: "{{ temporal_dl_dir }}/temporal_{{ temporal_version }}.tar.gz"
+    mode: "0644"
+
+- name: Extract the temporal server bundle
+  ansible.builtin.unarchive:
+    src: "{{ temporal_dl_dir }}/temporal_{{ temporal_version }}.tar.gz"
+    dest: "{{ temporal_dl_dir }}/server-{{ temporal_version }}"
+    remote_src: true
+    creates: "{{ temporal_dl_dir }}/server-{{ temporal_version }}/temporal-server"
+
+- name: Install the temporal server binaries
+  ansible.builtin.copy:
+    src: "{{ temporal_dl_dir }}/server-{{ temporal_version }}/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    remote_src: true
+    mode: "0755"
+  loop:
+    - temporal-server
+    - temporal-sql-tool
+    - tdbg
+  notify: Restart temporal
+
+- name: Download the temporal CLI
+  ansible.builtin.get_url:
+    url: "{{ temporal_cli_url }}"
+    dest: "{{ temporal_dl_dir }}/temporal_cli_{{ temporal_cli_version }}.tar.gz"
+    mode: "0644"
+
+- name: Extract the temporal CLI
+  ansible.builtin.unarchive:
+    src: "{{ temporal_dl_dir }}/temporal_cli_{{ temporal_cli_version }}.tar.gz"
+    dest: "{{ temporal_dl_dir }}/cli-{{ temporal_cli_version }}"
+    remote_src: true
+    creates: "{{ temporal_dl_dir }}/cli-{{ temporal_cli_version }}/temporal"
+
+- name: Install the temporal CLI
+  ansible.builtin.copy:
+    src: "{{ temporal_dl_dir }}/cli-{{ temporal_cli_version }}/temporal"
+    dest: /usr/local/bin/temporal
+    remote_src: true
+    mode: "0755"
+
+- name: Download the temporal UI server
+  ansible.builtin.get_url:
+    url: "{{ temporal_ui_url }}"
+    dest: "{{ temporal_dl_dir }}/ui-server_{{ temporal_ui_version }}.tar.gz"
+    mode: "0644"
+
+- name: Extract the temporal UI server
+  ansible.builtin.unarchive:
+    src: "{{ temporal_dl_dir }}/ui-server_{{ temporal_ui_version }}.tar.gz"
+    dest: "{{ temporal_dl_dir }}/ui-{{ temporal_ui_version }}"
+    remote_src: true
+    creates: "{{ temporal_dl_dir }}/ui-{{ temporal_ui_version }}/ui-server"
+
+- name: Install the temporal UI server
+  ansible.builtin.copy:
+    src: "{{ temporal_dl_dir }}/ui-{{ temporal_ui_version }}/ui-server"
+    dest: /usr/local/bin/temporal-ui-server
+    remote_src: true
+    mode: "0755"
+  notify: Restart temporal-ui
+
+# ---------------------------------------------------------------------------
+# Schema — setup versioning tables, then apply embedded migrations to latest.
+# Guarded on the schema_version table so re-runs are no-ops. update-schema alone is
+# idempotent but requires the versioning tables setup-schema creates.
+# ---------------------------------------------------------------------------
+- name: Check whether each database is already initialized
+  ansible.builtin.command:
+    cmd: >-
+      psql -h {{ temporal_pg_host }} -p {{ temporal_pg_port }} -U {{ temporal_pg_user }}
+      -d {{ item }} -tAc "SELECT to_regclass('public.schema_version')"
+  environment:
+    PGPASSWORD: "{{ temporal_pg_password }}"
+  register: temporal_schema_check
+  changed_when: false
+  failed_when: false
+  no_log: true
+  loop:
+    - "{{ temporal_pg_db }}"
+    - "{{ temporal_pg_visibility_db }}"
+
+- name: Initialize the temporal schemas
+  ansible.builtin.command:
+    cmd: "{{ item.cmd }}"
+  environment:
+    SQL_PLUGIN: "{{ temporal_pg_plugin }}"
+    SQL_HOST: "{{ temporal_pg_host }}"
+    SQL_PORT: "{{ temporal_pg_port | string }}"
+    SQL_USER: "{{ temporal_pg_user }}"
+    SQL_PASSWORD: "{{ temporal_pg_password }}"
+    SQL_DATABASE: "{{ item.db }}"
+  changed_when: true
+  no_log: true
+  when: item.needed
+  loop:
+    - db: "{{ temporal_pg_db }}"
+      needed: "{{ 'schema_version' not in temporal_schema_check.results[0].stdout }}"
+      cmd: "temporal-sql-tool setup-schema -v 0.0"
+    - db: "{{ temporal_pg_db }}"
+      needed: "{{ 'schema_version' not in temporal_schema_check.results[0].stdout }}"
+      cmd: "temporal-sql-tool update-schema --schema-name postgresql/v12/temporal"
+    - db: "{{ temporal_pg_visibility_db }}"
+      needed: "{{ 'schema_version' not in temporal_schema_check.results[1].stdout }}"
+      cmd: "temporal-sql-tool setup-schema -v 0.0"
+    - db: "{{ temporal_pg_visibility_db }}"
+      needed: "{{ 'schema_version' not in temporal_schema_check.results[1].stdout }}"
+      cmd: "temporal-sql-tool update-schema --schema-name postgresql/v12/visibility"
+  loop_control:
+    label: "{{ item.db }}: {{ item.cmd }}"
+
+# ---------------------------------------------------------------------------
+# Service user, config, systemd
+# ---------------------------------------------------------------------------
+- name: Create the temporal system user
+  ansible.builtin.user:
+    name: "{{ temporal_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Install the temporal server config
+  ansible.builtin.template:
+    src: development.yaml.j2
+    dest: "{{ temporal_config_dir }}/config/development.yaml"
+    owner: root
+    group: "{{ temporal_user }}"
+    mode: "0640"
+  no_log: true
+  notify: Restart temporal
+
+- name: Install the temporal dynamic config
+  ansible.builtin.copy:
+    src: dynamicconfig-development-sql.yaml
+    dest: "{{ temporal_config_dir }}/config/dynamicconfig/development-sql.yaml"
+    owner: root
+    group: "{{ temporal_user }}"
+    mode: "0644"
+  notify: Restart temporal
+
+- name: Install the temporal UI config
+  ansible.builtin.template:
+    src: ui-development.yaml.j2
+    dest: "{{ temporal_ui_config_dir }}/config/development.yaml"
+    owner: root
+    group: "{{ temporal_user }}"
+    mode: "0644"
+  notify: Restart temporal-ui
+
+- name: Ensure config trees are owned by the temporal user
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    recurse: true
+    owner: "{{ temporal_user }}"
+    group: "{{ temporal_user }}"
+  loop:
+    - "{{ temporal_config_dir }}"
+    - "{{ temporal_ui_config_dir }}"
+
+- name: Install the temporal systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - temporal.service
+    - temporal-ui.service
+  notify:
+    - Reload systemd daemon (temporal)
+    - Restart temporal
+    - Restart temporal-ui
+
+- name: Apply unit changes before enabling
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start temporal
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - temporal
+    - temporal-ui
+
+- name: Wait for the temporal frontend to accept connections
+  ansible.builtin.wait_for:
+    host: "{{ temporal_pg_host }}"
+    port: "{{ temporal_frontend_grpc_port }}"
+    timeout: 60
+
+# ---------------------------------------------------------------------------
+# Namespace + search attributes (idempotent)
+# ---------------------------------------------------------------------------
+- name: Check whether the fleet namespace exists
+  ansible.builtin.command:
+    cmd: >-
+      temporal operator namespace describe --address {{ temporal_pg_host }}:{{ temporal_frontend_grpc_port }}
+      --namespace {{ temporal_namespace }}
+  register: temporal_ns_check
+  changed_when: false
+  failed_when: false
+
+- name: Create the fleet namespace
+  ansible.builtin.command:
+    cmd: >-
+      temporal operator namespace create --address {{ temporal_pg_host }}:{{ temporal_frontend_grpc_port }}
+      --namespace {{ temporal_namespace }} --retention {{ temporal_namespace_retention }}
+  changed_when: true
+  when: temporal_ns_check.rc != 0
+
+- name: Register custom search attributes
+  ansible.builtin.command:
+    cmd: >-
+      temporal operator search-attribute create --address {{ temporal_pg_host }}:{{ temporal_frontend_grpc_port }}
+      --namespace {{ temporal_namespace }} --name {{ item.name }} --type {{ item.type }}
+  register: temporal_sa
+  changed_when: "'have been added' in temporal_sa.stdout"
+  failed_when: >-
+    temporal_sa.rc != 0 and 'already exists' not in (temporal_sa.stderr + temporal_sa.stdout)
+  loop: "{{ temporal_search_attributes }}"
+  loop_control:
+    label: "{{ item.name }}"
