@@ -65,6 +65,31 @@
   register: golden_image_sha
   changed_when: false
 
+# The build emits a compressed .ext4.zst (for storage/transfer); fleet-agent launches from
+# the decompressed .ext4. Activation makes the freshly built image the live one.
+- name: Decompress the built image for launch
+  ansible.builtin.shell: >
+    zstd -d -f
+    "{{ golden_image_out_dir }}/rootfs-{{ golden_image_sha.stdout | trim }}.ext4.zst"
+    -o "{{ golden_image_out_dir }}/rootfs-{{ golden_image_sha.stdout | trim }}.ext4"
+  args:
+    executable: /bin/bash
+    creates: "{{ golden_image_out_dir }}/rootfs-{{ golden_image_sha.stdout | trim }}.ext4"
+
+- name: Activate the built image as current
+  ansible.builtin.file:
+    src: "rootfs-{{ golden_image_sha.stdout | trim }}.ext4"
+    dest: "{{ golden_image_out_dir }}/current.ext4"
+    state: link
+
+- name: Record the current image sha
+  ansible.builtin.copy:
+    content: "{{ golden_image_sha.stdout | trim }}\n"
+    dest: "{{ golden_image_out_dir }}/current.sha"
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Report the built image sha
   ansible.builtin.debug:
-    msg: "golden image: rootfs-{{ golden_image_sha.stdout | trim }}.ext4.zst in {{ golden_image_out_dir }}"
+    msg: "golden image active: rootfs-{{ golden_image_sha.stdout | trim }}.ext4 (current.ext4) in {{ golden_image_out_dir }}"

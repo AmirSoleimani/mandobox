@@ -111,3 +111,13 @@ for vmdir in "${STATE_DIR}"/*/; do
     remove_vm "${vmdir}" # transient state + tap only — NOT the workspace volume (§7.6)
   fi
 done
+
+# Sweep orphan jailer logs: fleet-agent captures jailer/firecracker output to a top-level
+# jailer-<sid>.log (not inside the per-VM dir), so it outlives a removed VM. Drop any whose
+# session state dir is gone.
+for lf in "${STATE_DIR}"/jailer-*.log; do
+  [ -e "${lf}" ] || continue
+  sid="$(basename "${lf}" .log)"
+  sid="${sid#jailer-}"
+  [ -d "${STATE_DIR}/${sid}" ] || rm -f "${lf}"
+done
