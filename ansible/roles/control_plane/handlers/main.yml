@@ -1,0 +1,19 @@
+---
+- name: Reload systemd daemon (control-plane)
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart fleet-worker
+  ansible.builtin.systemd_service:
+    name: fleet-worker
+    state: restarted
+
+- name: Restart webhook-rx
+  ansible.builtin.systemd_service:
+    name: webhook-rx
+    state: restarted
+
+- name: Restart nats-bridge
+  ansible.builtin.systemd_service:
+    name: nats-bridge
+    state: restarted
