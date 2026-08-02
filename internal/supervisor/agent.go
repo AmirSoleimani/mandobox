@@ -104,6 +104,10 @@ func agentEnv(base []string, spec AgentSpec) ([]string, error) {
 		"HTTPS_PROXY="+spec.BaseURL,
 		"HTTP_PROXY="+spec.BaseURL,
 		"NO_PROXY=169.254.169.254,localhost,127.0.0.1",
+		// The guest runs Claude Code as root (PID 1). Claude Code refuses bypassPermissions
+		// (--dangerously-skip-permissions) as root unless the environment declares a sandbox —
+		// which the microVM is. Without this the headless agent cannot auto-approve bash tools.
+		"IS_SANDBOX=1",
 	)
 	if slices.ContainsFunc(out, isAnthropicAPIKey) {
 		return nil, errors.New("I9 violation: ANTHROPIC_API_KEY present in agent environment")
