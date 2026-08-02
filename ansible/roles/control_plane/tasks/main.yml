@@ -68,6 +68,39 @@
     mode: "0640"
   notify: Restart fleet-worker
 
+# ---- Slack (optional): only if all three secrets exist on the controller ----
+- name: Check for the Slack secrets on the controller
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: control_plane_slack_stat
+  loop:
+    - "{{ control_plane_slack_bot_token_src }}"
+    - "{{ control_plane_slack_app_token_src }}"
+    - "{{ control_plane_slack_channel_src }}"
+
+- name: Decide whether Slack is configured
+  ansible.builtin.set_fact:
+    control_plane_slack_enabled: "{{ control_plane_slack_stat.results | map(attribute='stat.exists') | select | list | length == 3 }}"
+
+- name: Install the Slack env file (Tier-0)
+  ansible.builtin.copy:
+    content: |
+      SLACK_BOT_TOKEN={{ lookup('file', control_plane_slack_bot_token_src) | trim }}
+      SLACK_APP_TOKEN={{ lookup('file', control_plane_slack_app_token_src) | trim }}
+      SLACK_CHANNEL={{ lookup('file', control_plane_slack_channel_src) | trim }}
+    dest: "{{ control_plane_conf_dir }}/slack.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: control_plane_slack_enabled
+  notify:
+    - Restart fleet-worker
+    - Restart slack-gateway
+
 - name: Create the guest-stream log directory
   ansible.builtin.file:
     path: "{{ control_plane_log_dir }}"
@@ -87,16 +120,18 @@
     - fleet-worker.service
     - webhook-rx.service
     - nats-bridge.service
+    - slack-gateway.service
   notify:
     - Reload systemd daemon (control-plane)
     - Restart fleet-worker
     - Restart webhook-rx
     - Restart nats-bridge
+    - Restart slack-gateway
 
 - name: Apply unit changes before enabling
   ansible.builtin.meta: flush_handlers
 
-- name: Enable and start the control-plane services
+- name: Enable and start the always-on control-plane services
   ansible.builtin.systemd_service:
     name: "{{ item }}"
     enabled: true
@@ -105,3 +140,9 @@
     - nats-bridge
     - fleet-worker
     - webhook-rx
+
+- name: Enable and start slack-gateway when Slack is configured
+  ansible.builtin.systemd_service:
+    name: slack-gateway
+    enabled: "{{ control_plane_slack_enabled }}"
+    state: "{{ 'started' if control_plane_slack_enabled else 'stopped' }}"

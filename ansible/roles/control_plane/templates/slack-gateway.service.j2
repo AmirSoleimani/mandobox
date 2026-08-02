@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Fleet Slack gateway (Socket Mode: /fleet dispatch + thread replies)
+After=network-online.target temporal.service
+Wants=network-online.target
+Requires=temporal.service
+
+[Service]
+Type=simple
+Environment=TEMPORAL_ADDRESS={{ control_plane_temporal_address }}
+Environment=TEMPORAL_NAMESPACE={{ control_plane_temporal_namespace }}
+EnvironmentFile={{ control_plane_conf_dir }}/slack.env
+ExecStart=/usr/local/bin/slack-gateway
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

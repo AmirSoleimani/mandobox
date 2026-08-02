@@ -1,4 +1,4 @@
-BINS := fleet-agent fleet-reconciler fc-supervisor fleet-gateway fleet-worker webhook-rx nats-bridge fleet-dispatch
+BINS := fleet-agent fleet-reconciler fc-supervisor fleet-gateway fleet-worker webhook-rx nats-bridge fleet-dispatch slack-gateway
 DIST := bin
 
 .PHONY: build test vet check dist clean

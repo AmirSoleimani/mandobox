@@ -8,6 +8,7 @@ Requires=temporal.service
 [Service]
 Type=simple
 EnvironmentFile={{ control_plane_conf_dir }}/control-plane.env
+EnvironmentFile=-{{ control_plane_conf_dir }}/slack.env
 ExecStart=/usr/local/bin/fleet-worker
 Restart=on-failure
 RestartSec=3

@@ -204,6 +204,9 @@ func postRoot(ctx workflow.Context, st *State, in WorkflowInput) {
 	if err := workflow.ExecuteActivity(slackCtx(ctx), a.PostSlack,
 		PostSlackParams{Channel: in.SlackChannel, Text: text}).Get(ctx, &r); err == nil && r.TS != "" {
 		st.SlackThreadTS, st.SlackChannel = r.TS, r.Channel
+		// So slack-gateway can route thread replies back to this workflow (§6.4).
+		_ = workflow.UpsertTypedSearchAttributes(ctx,
+			temporal.NewSearchAttributeKeyKeyword(SASlackThread).ValueSet(r.TS))
 	}
 }
 
