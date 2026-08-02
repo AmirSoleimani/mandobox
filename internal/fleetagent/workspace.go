@@ -117,11 +117,12 @@ func (w *Workspace) EnsureRootfs(ctx context.Context, imageSHA string) (string, 
 	return ext4, nil
 }
 
-// ReflinkCopy copy-on-write clones src to dst. Requires src and dst on the same
-// reflink-capable filesystem (XFS/Btrfs); on ext4 or across filesystems cp fails and the
-// error surfaces to the operator (see docs/hetzner-setup.md §3).
+// ReflinkCopy clones src to dst copy-on-write when the filesystem supports it (XFS/Btrfs),
+// falling back to a full copy on ext4 (--reflink=auto). CoW is a launch-latency optimization;
+// on ext4 the fallback copies the rootfs per launch (a couple of seconds), which is fine at
+// personal scale. See docs/decisions.md.
 func (w *Workspace) ReflinkCopy(ctx context.Context, src, dst string) error {
-	if err := w.runner.Run(ctx, "cp", "--reflink=always", src, dst); err != nil {
+	if err := w.runner.Run(ctx, "cp", "--reflink=auto", src, dst); err != nil {
 		return fmt.Errorf("reflink copy %s -> %s: %w", src, dst, err)
 	}
 	return nil

@@ -34,6 +34,14 @@ independent reboot/patch of the two. Acceptable for a single-operator tool.
   NATS. `control-plane.yml` and the `control` group are gone.
 - M4's control-plane services co-locate on the same box.
 
+## Filesystem — XFS recommended, ext4 supported
+
+Rootfs copies use `cp --reflink=auto`: an instant copy-on-write clone on XFS/Btrfs, and a
+full copy on ext4. **XFS root is still recommended** (instant, no per-launch copy cost), but
+ext4 works — the fallback copies the ~2 GB rootfs per launch (seconds on SSD, longer on HDD),
+which is fine at personal scale. Because everything lives under one root filesystem, the
+workspace/kernel hardlinks into the jailer chroot are same-FS and work on either.
+
 ## Earlier decisions (recorded elsewhere)
 
 - **D1 — verification story:** guest runs linters + language unit tests only; full e2e is

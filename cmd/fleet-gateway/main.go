@@ -79,7 +79,7 @@ func readAllowlist(path string) ([]string, error) {
 		return nil, err
 	}
 	var out []string
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
 			out = append(out, line)
 		}

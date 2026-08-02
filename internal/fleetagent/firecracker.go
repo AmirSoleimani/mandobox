@@ -109,8 +109,9 @@ func (d *FirecrackerDriver) startJailer(id session.ID) (int, error) {
 // chroot, then hands ownership to the jailed uid so Firecracker can open them.
 func (d *FirecrackerDriver) placeResources(ctx context.Context, spec LaunchSpec, root string) error {
 	rootfs := filepath.Join(root, "rootfs.ext4")
-	if err := d.runner.Run(ctx, "cp", "--reflink=always", spec.RootfsSource, rootfs); err != nil {
-		return fmt.Errorf("place rootfs (reflink): %w", err)
+	// CoW clone when the FS supports it (XFS/Btrfs), else a full copy on ext4.
+	if err := d.runner.Run(ctx, "cp", "--reflink=auto", spec.RootfsSource, rootfs); err != nil {
+		return fmt.Errorf("place rootfs: %w", err)
 	}
 	if err := linkOrCopy(ctx, d.runner, spec.WorkspacePath, filepath.Join(root, "workspace.ext4")); err != nil {
 		return fmt.Errorf("place workspace: %w", err)
