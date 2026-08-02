@@ -252,18 +252,23 @@ func (s *Supervisor) prBody(res Result) string {
 }
 
 // autonomousPreamble prefixes every task: the agent runs headless with no human to answer
-// questions, so it must make reasonable assumptions and finish rather than ask (§8.3).
+// questions, so it must make reasonable assumptions and finish rather than ask (§8.3). It must
+// NOT run git or gh itself — the supervisor commits, pushes, and opens/updates the PR after the
+// agent finishes (finalize). If the agent commits, `git status` is clean and the supervisor
+// sees no diff, so the work is never pushed.
 const autonomousPreamble = "You are running non-interactively, with no human available to " +
 	"answer questions. Make reasonable assumptions and COMPLETE the task by editing files — " +
-	"do not ask for clarification or stop to confirm.\n\n"
+	"do not ask for clarification or stop to confirm. Do NOT run git commit, git push, or gh, " +
+	"and do NOT open a pull request: committing, pushing, and the PR are handled automatically " +
+	"once you finish. Just make the file changes (and run tests or tools if useful).\n\n"
 
-// resumePrompt assembles a resume instruction, folding in any queued steering messages, with
-// an explicit directive to push to the same branch and NOT open a new PR (§8.2).
+// resumePrompt assembles a resume instruction, folding in any queued steering messages. The
+// same branch and existing PR are reused automatically; the agent only edits (§8.2).
 func resumePrompt(instructions, queued []string) string {
 	var b strings.Builder
 	b.WriteString(autonomousPreamble)
-	b.WriteString("Continue work on this branch. Address the following feedback, then commit.\n")
-	b.WriteString("Do NOT open a new pull request — push to the existing branch.\n\n")
+	b.WriteString("You are continuing an existing task on its branch; your previous changes are " +
+		"already present in this workspace. Address the following review feedback by editing files.\n\n")
 	for _, in := range instructions {
 		fmt.Fprintf(&b, "- %s\n", in)
 	}

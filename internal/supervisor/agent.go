@@ -73,7 +73,10 @@ func claudeArgs(spec AgentSpec) []string {
 		"-p", spec.Prompt,
 		"--output-format", "stream-json",
 		"--verbose",
-		"--permission-mode", "acceptEdits",
+		// The microVM is the sandbox (§8.1): bypass Claude Code's own approval prompts so the
+		// headless agent can run bash tools (tests, linters, git) without a human to approve.
+		// acceptEdits auto-approves file edits only, so bash calls hang/fail with no approver.
+		"--permission-mode", "bypassPermissions",
 	}
 	if spec.Model != "" {
 		args = append(args, "--model", spec.Model)

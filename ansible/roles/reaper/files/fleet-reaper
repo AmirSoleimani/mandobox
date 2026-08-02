@@ -19,6 +19,7 @@ STATE_DIR="${FLEET_VM_STATE_DIR:-/run/fleet/vms}"
 MAX_LIFETIME="${FLEET_MAX_LIFETIME:-21600}"          # 6h
 HEARTBEAT_TIMEOUT="${FLEET_HEARTBEAT_TIMEOUT:-600}"  # 10m
 TERM_GRACE="${FLEET_TERM_GRACE:-10}"
+ORPHAN_GRACE="${FLEET_ORPHAN_GRACE:-120}"            # min age before killing a state-less VM
 
 log() { echo "fleet-reaper: $*"; }
 
@@ -109,6 +110,30 @@ for vmdir in "${STATE_DIR}"/*/; do
   if [ -n "${reason}" ]; then
     reap "${pid}" "${sid}" "${reason}"
     remove_vm "${vmdir}" # transient state + tap only — NOT the workspace volume (§7.6)
+  fi
+done
+
+# Sweep orphan Firecracker processes whose VM state dir is gone. A guest that wedges (never
+# reaches its clean power-off) can outlive `DestroyVM`, which removes the state dir but may not
+# kill a process stuck in uninterruptible I/O. Nothing else catches a process with no state
+# dir — the main loop and the reconciler are both state-driven — so this is the last net.
+# Match on the stable api-sock marker (Firecracker's comm is truncated to "firecracker-v1.").
+# The ORPHAN_GRACE avoids the launch race: fleet-agent starts Firecracker before it persists
+# the state dir, so a just-launched VM briefly has a live process and no dir.
+for pid in $(pgrep -f -- '--api-sock /firecracker.socket' 2>/dev/null || true); do
+  cl="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
+  case "${cl}" in *firecracker*) ;; *) continue ;; esac
+  jid="$(printf '%s' "${cl}" | grep -oE -- '--id [^ ]+' | awk '{print $2}')"
+  [ -n "${jid}" ] || continue
+  sid="s_${jid#s-}" # jailer id "s-XXXX" ← session id "s_XXXX" (jailer forbids underscores)
+  [ -d "${STATE_DIR}/${sid}" ] && continue # fleet-agent still tracks it — leave it
+  age="$(ps -o etimes= -p "${pid}" 2>/dev/null | tr -d ' ')"
+  age="${age:-0}"
+  [ "${age}" -lt "${ORPHAN_GRACE}" ] && continue # too young — may be mid-launch
+  reap "${pid}" "${sid}" "orphan firecracker (no state dir) age=${age}s"
+  tap="tap${sid:2:12}" # TapName(): "tap" + first 12 of the id suffix
+  if ip link show "${tap}" >/dev/null 2>&1; then
+    ip link del "${tap}" 2>/dev/null && log "deleted orphan tap ${tap}" || true
   fi
 done
 
