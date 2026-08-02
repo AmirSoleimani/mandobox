@@ -24,6 +24,7 @@ const (
 	SARepo        = "repo"
 	SAPRNumber    = "pr_number"
 	SAReviewRound = "review_round"
+	SASlackThread = "slack_thread" // thread_ts → workflow, so slack-gateway routes replies
 )
 
 // Policy knobs — workflow input, baked nowhere else (PLAN §6.1). Defaults applied in the

@@ -13,6 +13,7 @@ control_plane_binaries:
   - webhook-rx
   - nats-bridge
   - fleet-dispatch
+  - slack-gateway
 
 # GitHub App — installation-token minting (Tier-0 private key stays host-side).
 control_plane_github_app_id: "4465858"
@@ -24,6 +25,12 @@ control_plane_bot_email: "chelodocloudagent[bot]@users.noreply.github.com"
 
 # Webhook HMAC secret (must match the GitHub App webhook config).
 control_plane_webhook_secret_src: "{{ playbook_dir }}/../secrets/webhook-secret"
+
+# Slack (optional — Socket Mode). If these three secrets exist on the controller, the worker
+# posts to Slack and slack-gateway runs; otherwise both degrade gracefully (no Slack).
+control_plane_slack_bot_token_src: "{{ playbook_dir }}/../secrets/slack-bot-token"
+control_plane_slack_app_token_src: "{{ playbook_dir }}/../secrets/slack-app-token"
+control_plane_slack_channel_src: "{{ playbook_dir }}/../secrets/slack-channel"
 
 # Endpoints — all localhost / host-anchor.
 control_plane_temporal_address: "127.0.0.1:7233"

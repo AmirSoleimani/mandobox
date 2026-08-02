@@ -17,3 +17,8 @@
   ansible.builtin.systemd_service:
     name: nats-bridge
     state: restarted
+
+- name: Restart slack-gateway
+  ansible.builtin.systemd_service:
+    name: slack-gateway
+    state: restarted
