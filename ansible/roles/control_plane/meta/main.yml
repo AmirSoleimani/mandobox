@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: Chelodo
+  description: Deploy the Temporal control-plane services — fleet-worker, webhook-rx, nats-bridge (M4).
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - fleet
+    - temporal
+dependencies: []

@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Fleet Temporal worker (PRWorkflow + activities)
+After=network-online.target temporal.service fleet-agent.service nats.service
+Wants=network-online.target
+Requires=temporal.service
+
+[Service]
+Type=simple
+EnvironmentFile={{ control_plane_conf_dir }}/control-plane.env
+ExecStart=/usr/local/bin/fleet-worker
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

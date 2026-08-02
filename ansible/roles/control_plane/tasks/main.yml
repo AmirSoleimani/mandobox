@@ -1,0 +1,107 @@
+---
+- name: Assert the GitHub App key exists on the controller
+  ansible.builtin.stat:
+    path: "{{ control_plane_github_app_key_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: control_plane_app_key_stat
+
+- name: Assert the webhook secret exists on the controller
+  ansible.builtin.stat:
+    path: "{{ control_plane_webhook_secret_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: control_plane_webhook_stat
+
+- name: Fail if Tier-0 secrets are missing
+  ansible.builtin.assert:
+    that:
+      - control_plane_app_key_stat.stat.exists
+      - control_plane_webhook_stat.stat.exists
+    fail_msg: >-
+      Missing {{ control_plane_github_app_key_src }} or {{ control_plane_webhook_secret_src }}.
+      Place the GitHub App private key and generate a webhook secret
+      (openssl rand -hex 24 > secrets/webhook-secret) before deploying the control plane.
+  run_once: true
+
+- name: Install the control-plane binaries
+  ansible.builtin.copy:
+    src: "{{ control_plane_dist_dir }}/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ control_plane_binaries }}"
+  notify:
+    - Restart fleet-worker
+    - Restart webhook-rx
+    - Restart nats-bridge
+
+- name: Install the GitHub App private key (Tier-0)
+  ansible.builtin.copy:
+    src: "{{ control_plane_github_app_key_src }}"
+    dest: "{{ control_plane_github_app_key }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart fleet-worker
+
+- name: Install the webhook secret env file (Tier-0)
+  ansible.builtin.copy:
+    content: "GITHUB_WEBHOOK_SECRET={{ lookup('file', control_plane_webhook_secret_src) | trim }}\n"
+    dest: "{{ control_plane_conf_dir }}/webhook-secret.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart webhook-rx
+
+- name: Install the worker env file
+  ansible.builtin.template:
+    src: control-plane.env.j2
+    dest: "{{ control_plane_conf_dir }}/control-plane.env"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart fleet-worker
+
+- name: Create the guest-stream log directory
+  ansible.builtin.file:
+    path: "{{ control_plane_log_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install the control-plane systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - fleet-worker.service
+    - webhook-rx.service
+    - nats-bridge.service
+  notify:
+    - Reload systemd daemon (control-plane)
+    - Restart fleet-worker
+    - Restart webhook-rx
+    - Restart nats-bridge
+
+- name: Apply unit changes before enabling
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the control-plane services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - nats-bridge
+    - fleet-worker
+    - webhook-rx

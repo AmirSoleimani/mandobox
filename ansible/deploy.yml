@@ -19,3 +19,5 @@
       tags: [nats]
     - role: temporal
       tags: [temporal]
+    - role: control_plane
+      tags: [control_plane]

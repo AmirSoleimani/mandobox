@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Fleet NATS bridge (guest event/log archival)
+After=network-online.target nats.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=NATS_URL={{ control_plane_nats_url }}
+Environment=FLEET_LOG_DIR={{ control_plane_log_dir }}
+ExecStart=/usr/local/bin/nats-bridge
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

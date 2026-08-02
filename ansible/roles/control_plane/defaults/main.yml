@@ -1,0 +1,34 @@
+---
+# The Temporal control-plane services (M4): fleet-worker (PRWorkflow + activities), webhook-rx
+# (GitHub webhooks → signals), nats-bridge (guest stream archival). They run on the fleet host
+# alongside Temporal and fleet-agent. Tier-0 secrets (the GitHub App key, webhook secret) live
+# here and never enter a guest (§9).
+control_plane_dist_dir: "{{ playbook_dir }}/../bin"
+control_plane_conf_dir: /etc/fleet
+control_plane_tls_dir: /etc/fleet/tls # installed by the fleet_agent role
+control_plane_log_dir: /var/lib/fleet/logs
+
+control_plane_binaries:
+  - fleet-worker
+  - webhook-rx
+  - nats-bridge
+  - fleet-dispatch
+
+# GitHub App — installation-token minting (Tier-0 private key stays host-side).
+control_plane_github_app_id: "4465858"
+control_plane_github_org: chelodo
+control_plane_github_app_key_src: "{{ playbook_dir }}/../secrets/chelodocloudagent.2026-08-02.private-key.pem"
+control_plane_github_app_key: "{{ control_plane_conf_dir }}/github-app.pem"
+control_plane_bot_user: "chelodocloudagent[bot]"
+control_plane_bot_email: "chelodocloudagent[bot]@users.noreply.github.com"
+
+# Webhook HMAC secret (must match the GitHub App webhook config).
+control_plane_webhook_secret_src: "{{ playbook_dir }}/../secrets/webhook-secret"
+
+# Endpoints — all localhost / host-anchor.
+control_plane_temporal_address: "127.0.0.1:7233"
+control_plane_temporal_namespace: fleet
+control_plane_fleet_url: "https://127.0.0.1:9443"
+control_plane_nats_url: "nats://172.31.0.1:4222"
+control_plane_gateway_url: "http://172.31.0.1:8080"
+control_plane_webhook_addr: "127.0.0.1:8088"
