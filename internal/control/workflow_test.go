@@ -33,6 +33,7 @@ func (s *PRWorkflowSuite) Test_ReviewComment_Resume_Then_Merge() {
 	env := s.NewTestWorkflowEnvironment()
 	var a *control.Activities
 
+	env.OnActivity(a.PostSlack, mock.Anything, mock.Anything).Return(control.PostSlackResult{}, nil)
 	env.OnActivity(a.MintCredentials, mock.Anything, mock.Anything).
 		Return(control.Credentials{GitHubToken: "t"}, nil)
 	env.OnActivity(a.LaunchVM, mock.Anything, mock.Anything).
@@ -83,6 +84,7 @@ func (s *PRWorkflowSuite) Test_NoPR_TearsDown() {
 	env := s.NewTestWorkflowEnvironment()
 	var a *control.Activities
 
+	env.OnActivity(a.PostSlack, mock.Anything, mock.Anything).Return(control.PostSlackResult{}, nil)
 	env.OnActivity(a.MintCredentials, mock.Anything, mock.Anything).Return(control.Credentials{}, nil)
 	env.OnActivity(a.LaunchVM, mock.Anything, mock.Anything).Return(control.LaunchResult{}, nil)
 	env.OnActivity(a.RunAgentPhase, mock.Anything, mock.Anything).

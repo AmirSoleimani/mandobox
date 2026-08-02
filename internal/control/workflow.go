@@ -1,6 +1,8 @@
 package control
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/chelodo/fleet/internal/supervisor"
@@ -34,17 +36,22 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	_ = workflow.UpsertTypedSearchAttributes(ctx,
 		temporal.NewSearchAttributeKeyKeyword(SARepo).ValueSet(in.Repo))
 
+	startTime := workflow.Now(ctx)
+	postRoot(ctx, st, in) // opens the Slack thread; sets SlackThreadTS + SlackChannel
+
 	// Hard TTL bounds the whole workflow (D2: 24h while iterating).
 	ttl := workflow.NewTimer(ctx, in.Policy.HardTTL)
 
 	// Initial phase: mint → launch → run → destroy (keep workspace).
 	res := runPhase(ctx, in, st, supervisor.ModeInitial, nil)
 	recordOutcome(ctx, st, in, res)
+	reportPhase(ctx, st, res)
 
 	// If the first run never opened a PR, there is nothing to review — tear down and finish.
 	if st.PRNumber == 0 {
 		st.Phase = "no_pr"
 		destroyWorkspace(ctx, st)
+		finalSummary(ctx, st, startTime)
 		return *st, nil
 	}
 
@@ -161,8 +168,11 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 			st.PendingInstructions = nil
 			st.ReviewRound++
 			log.Info("resume round", "round", st.ReviewRound, "instructions", len(instructions))
+			slackNote(ctx, st, fmt.Sprintf(":arrows_counterclockwise: *Review round %d* — addressing %d item(s).",
+				st.ReviewRound, len(instructions)))
 			r := runPhase(ctx, in, st, supervisor.ModeResume, instructions)
 			recordOutcome(ctx, st, in, r)
+			reportPhase(ctx, st, r)
 			st.Phase = "awaiting_review"
 		}
 	}
@@ -178,9 +188,84 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 		st.Phase = "review_budget_exhausted"
 	}
 	destroyWorkspace(ctx, st)
+	finalSummary(ctx, st, startTime)
 	log.Info("workflow complete", "phase", st.Phase, "rounds", st.ReviewRound,
 		"cost_usd", st.CumulativeCostUSD, "pr", st.PRNumber)
 	return *st, nil
+}
+
+// ---- Slack thread rendering (§6.4). All best-effort: a Slack failure never fails the task. ----
+
+func postRoot(ctx workflow.Context, st *State, in WorkflowInput) {
+	var a *Activities
+	text := fmt.Sprintf(":robot_face: *Task dispatched* `%s`\n*repo* `%s`  *branch* `%s`\n> %s",
+		in.SessionID, in.Repo, st.HeadBranch, truncate(in.Prompt, 300))
+	var r PostSlackResult
+	if err := workflow.ExecuteActivity(slackCtx(ctx), a.PostSlack,
+		PostSlackParams{Channel: in.SlackChannel, Text: text}).Get(ctx, &r); err == nil && r.TS != "" {
+		st.SlackThreadTS, st.SlackChannel = r.TS, r.Channel
+	}
+}
+
+func slackNote(ctx workflow.Context, st *State, text string) {
+	if st.SlackThreadTS == "" {
+		return
+	}
+	var a *Activities
+	_ = workflow.ExecuteActivity(slackCtx(ctx), a.PostSlack,
+		PostSlackParams{Channel: st.SlackChannel, ThreadTS: st.SlackThreadTS, Text: text}).Get(ctx, nil)
+}
+
+func reportPhase(ctx workflow.Context, st *State, res PhaseResult) {
+	switch res.Outcome {
+	case supervisor.EventPROpened:
+		slackNote(ctx, st, fmt.Sprintf(":tada: *PR opened* <%s|#%d>  (cost $%.4f · %d tokens)",
+			res.PRURL, res.PRNumber, res.CostUSD, res.Tokens))
+	case supervisor.EventPushDone:
+		if res.Stage == "no_changes" {
+			slackNote(ctx, st, ":information_source: Agent produced no changes this round.")
+		} else {
+			slackNote(ctx, st, fmt.Sprintf(":arrow_up: Pushed `%s`  (cost $%.4f · %d tokens)",
+				shortSHA(res.CommitSHA), res.CostUSD, res.Tokens))
+		}
+	case supervisor.EventAgentFailed:
+		slackNote(ctx, st, fmt.Sprintf(":x: Run failed at *%s*: %s", res.Stage, res.Error))
+	case supervisor.EventNeedsInput:
+		slackNote(ctx, st, fmt.Sprintf(":grey_question: *Agent needs input*: %s\n_Reply in this thread to continue._", res.Question))
+	}
+}
+
+func finalSummary(ctx workflow.Context, st *State, start time.Time) {
+	wall := workflow.Now(ctx).Sub(start).Round(time.Second)
+	var b strings.Builder
+	fmt.Fprintf(&b, ":checkered_flag: *Session complete* — %s\n", st.Phase)
+	if st.PRNumber != 0 {
+		fmt.Fprintf(&b, "PR <%s|#%d> · ", st.PRURL, st.PRNumber)
+	}
+	fmt.Fprintf(&b, "rounds %d · $%.4f · %d tokens · %s",
+		st.ReviewRound, st.CumulativeCostUSD, st.CumulativeTokens, wall)
+	slackNote(ctx, st, b.String())
+}
+
+func slackCtx(ctx workflow.Context) workflow.Context {
+	return workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 30 * time.Second,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3},
+	})
+}
+
+func truncate(s string, n int) string {
+	if len(s) > n {
+		return s[:n] + "…"
+	}
+	return s
+}
+
+func shortSHA(s string) string {
+	if len(s) > 8 {
+		return s[:8]
+	}
+	return s
 }
 
 // runPhase does mint → launch → run → destroy-vm(keep workspace) for one mode.
