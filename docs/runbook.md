@@ -109,10 +109,14 @@ target repos, set branch protection + the `agent/*` ruleset. Needed for real PR 
 ## 8. Dispatch a task by hand (M3 end-to-end)
 
 `scripts/dispatch-vm.sh` POSTs a launch to fleet-agent. It needs a **GitHub installation
-token** — until M4's credential minter exists, mint one manually (App JWT → installation
-token; `gh` or a short script). `NATS_URL` defaults to the host anchor, so you can omit it.
+token**; mint a 1-hour one with `scripts/mint-github-token.sh` (App JWT → token — the manual
+stand-in for M4's credential minter). `NATS_URL` defaults to the host anchor, so you can omit it.
 
 ```sh
+export GITHUB_TOKEN="$(GITHUB_APP_ID=<app-id> \
+  GITHUB_APP_KEY=secrets/<app>.private-key.pem \
+  GITHUB_ORG=chelodo scripts/mint-github-token.sh)"
+
 export FLEET_URL=https://<fleet-host-ip>:9443
 export FLEET_TLS_CERT=secrets/fleet-tls/reconciler.crt
 export FLEET_TLS_KEY=secrets/fleet-tls/reconciler.key
@@ -120,7 +124,6 @@ export FLEET_SERVER_CA=secrets/fleet-tls/server-ca.crt
 export IMAGE_SHA=<sha from step 6>
 export REPO_SLUG=chelodo/yourrepo
 export REPO_CLONE_URL=https://github.com/chelodo/yourrepo.git
-export GITHUB_TOKEN=<installation token>
 export PROMPT="Add a /healthz endpoint"
 scripts/dispatch-vm.sh
 ```
