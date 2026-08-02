@@ -23,37 +23,39 @@ target (PLAN M6 = 5 concurrent VMs): **≥8 cores, 32–64 GB RAM, NVMe** is com
 each guest later gets its own vCPUs/RAM plus a workspace volume on disk. For the M1 smoke
 test alone, anything works.
 
-## 2. Install Debian 12 (bookworm)
+## 2. Install the OS (Ubuntu 22.04/24.04 LTS or Debian 12)
 
-The Ansible roles use `apt` and target Debian bookworm.
+The Ansible roles use `apt` and support **Ubuntu 22.04 (jammy) / 24.04 (noble) LTS** and
+**Debian 12 (bookworm)**. All work identically; pick any.
 
 1. Robot → **Rescue** → activate *Linux* rescue, note the root password.
 2. Reboot into rescue, SSH in as `root`.
-3. Run **`installimage`**, pick **Debian 12**, and edit the partition config (next section).
+3. Run **`installimage`**, pick **Ubuntu 24.04** (or Debian 12), and edit the partition
+   config (next section).
 4. Install, then reboot into the new system.
 
 Add your SSH public key so Ansible can log in as `root`: either attach a key to the
 server in Robot, or paste it into the `installimage` config's `SSHKEYS` / drop it into
-`authorized_keys` after install. The Hetzner Debian base image already ships `python3`
-(Ansible needs it on the target); if a stripped image ever lacks it, `apt-get install -y
-python3` before running the playbook.
+`authorized_keys` after install. Both base images ship `python3` (Ansible needs it on the
+target).
 
-## 3. ⚠️ Filesystem — the one choice that's painful to change later
+> **Ubuntu note:** a few packages the playbooks need (`busybox-static`, `mmdebstrap`,
+> `debian-archive-keyring`) live in the **universe** component, which Ubuntu Server enables
+> by default. If you ever see `apt` can't find them, run `add-apt-repository universe`.
 
-M2's `fleet-agent` **reflink-copies** the golden rootfs on every launch (PLAN §7.1).
-Reflink is copy-on-write and requires an **XFS (reflink on by default) or Btrfs**
-filesystem — **ext4 cannot reflink**, and reflink also fails *across* two filesystems.
+## 3. Filesystem — XFS recommended, ext4 fine
 
-**Simplest safe choice: make the root filesystem XFS.** Then the image cache
-(`/var/lib/fleet/images`) and the per-VM copies under the jailer chroot (`/srv/jailer`)
-sit on one reflink-capable filesystem automatically.
+`fleet-agent` copies the golden rootfs on every launch with `cp --reflink=auto`: an instant
+copy-on-write clone on **XFS** (or Btrfs), or a **full copy on ext4**. So ext4 works — the
+fallback just copies the ~2 GB rootfs per launch (a couple of seconds on SSD, longer on
+spinning disks). **XFS is recommended** because it makes that copy instant, and you get to
+pick it for free while reinstalling anyway.
 
-Sample `installimage` config for a 2×NVMe box with RAID1 — the only change from the
-default is `xfs` on `/`:
+Sample `installimage` config — set the root partition to `xfs` (leave everything else at
+installimage's defaults for your drives; the `DRIVE`/`IMAGE` lines are prefilled):
 
 ```text
-DRIVE1 /dev/nvme0n1
-DRIVE2 /dev/nvme1n1
+# ... DRIVE lines prefilled by installimage (e.g. /dev/sda /dev/sdb or /dev/nvme0n1 ...)
 SWRAID 1
 SWRAIDLEVEL 1
 HOSTNAME fleet-host-01
@@ -62,19 +64,17 @@ BOOTLOADER grub
 PART /boot ext4  1024M
 PART swap  swap  32G
 PART /     xfs   all
-
-# IMAGE line is filled in by installimage (Debian-12xx-bookworm-amd64-base.tar.gz)
+# IMAGE line is prefilled (Ubuntu-2404-noble-amd64-base.tar.gz, or Debian-12xx-...)
 ```
 
 If you would rather keep a **separate data partition**, put **both** `/var/lib/fleet` and
 the jailer chroot on it (same filesystem) and tell me — I'll repoint `fleet_jail_dir` in
-`ansible/group_vars/fleet.yml` at that partition so the reflink source and destination
-stay on one filesystem. Otherwise reflink silently falls back to a full copy or errors.
+`ansible/group_vars/fleet.yml` at it so the CoW source and destination stay on one FS.
 
 Verify after install:
 
 ```sh
-xfs_info / | grep -q 'reflink=1' && echo "reflink OK"
+findmnt -no FSTYPE /            # xfs (or ext4 — both fine)
 ls -l /dev/kvm && echo "kvm OK"
 ```
 
