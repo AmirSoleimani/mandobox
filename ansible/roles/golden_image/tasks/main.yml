@@ -45,16 +45,26 @@
     group: root
     mode: "0755"
 
-# Not idempotent by nature — each build is a fresh content-addressed artifact.
+# Not idempotent by nature — each build is a fresh content-addressed artifact. Output is
+# redirected to a host log: build tools (npm/node) emit non-UTF8 bytes that Ansible's result
+# deserializer rejects. On failure, read /var/log/fleet-image-build.log on the host.
 - name: Build the golden image (mmdebstrap; several minutes)
-  ansible.builtin.command: "{{ golden_image_lib_dir }}/build-mmdebstrap.sh"
+  ansible.builtin.shell: "{{ golden_image_lib_dir }}/build-mmdebstrap.sh >/var/log/fleet-image-build.log 2>&1"
+  args:
+    executable: /bin/bash
   environment:
     SUPERVISOR_BIN: "{{ golden_image_lib_dir }}/fc-supervisor"
     OUT_DIR: "{{ golden_image_out_dir }}"
     SIZE_MB: "{{ golden_image_size_mb }}"
-  register: golden_image_build
   changed_when: true
+
+- name: Read the built image sha
+  ansible.builtin.shell: "cat $(ls -t {{ golden_image_out_dir }}/rootfs-*.sha256 | head -1)"
+  args:
+    executable: /bin/bash
+  register: golden_image_sha
+  changed_when: false
 
 - name: Report the built image sha
   ansible.builtin.debug:
-    msg: "golden image: rootfs-{{ golden_image_build.stdout_lines | last }}.ext4.zst in {{ golden_image_out_dir }}"
+    msg: "golden image: rootfs-{{ golden_image_sha.stdout | trim }}.ext4.zst in {{ golden_image_out_dir }}"
