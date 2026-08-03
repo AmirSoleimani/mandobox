@@ -1,0 +1,21 @@
+---
+# LiteLLM proxy (PLAN §10): the model-routing layer between the egress gateway and the LLM
+# providers. Native (pip venv, no Docker), no database — a static model_list + master key only.
+# It holds the real provider key(s); the guest never does, and now neither does the gateway
+# (which injects only the LiteLLM master key) — one more hop from the guest (I1).
+litellm_venv: /opt/litellm/venv
+litellm_conf_dir: /etc/litellm
+litellm_user: litellm
+litellm_host: "127.0.0.1"
+litellm_port: 4000
+# Empty → install the latest litellm[proxy]; pin (e.g. "1.74.0") for reproducibility once known.
+litellm_version: ""
+
+# Routing table (task class → provider model). The guest's claude --model sends the alias.
+litellm_models:
+  - {alias: default, model: "anthropic/claude-sonnet-5"}
+  - {alias: cheap, model: "anthropic/claude-haiku-4-5-20251001"}
+
+# Secrets (Tier-0, gitignored, host-side only).
+litellm_anthropic_key_src: "{{ playbook_dir }}/../secrets/anthropic.key"
+litellm_master_key_src: "{{ playbook_dir }}/../secrets/litellm-master-key"

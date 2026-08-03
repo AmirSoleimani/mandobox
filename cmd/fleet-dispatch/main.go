@@ -33,7 +33,7 @@ func main() {
 		BaseBranch: env("BASE_BRANCH", "main"),
 		Prompt:     env("PROMPT", "Make a small, well-scoped improvement and open a PR."),
 		ImageSHA:   imageSHA,
-		Model:      env("CLAUDE_MODEL", "claude-sonnet-5"),
+		Model:      env("CLAUDE_MODEL", "default"), // LiteLLM routing alias (§10): default|cheap
 		VCPUs:      atoi(env("VCPUS", "2")),
 		MemMiB:     atoi(env("MEM_MIB", "4096")),
 	}

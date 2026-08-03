@@ -14,7 +14,7 @@
     fail_msg: "Missing {{ egress_gateway_dist_dir }}/fleet-gateway. Run `make dist` first."
   run_once: true
 
-- name: Check the Anthropic key exists on the controller
+- name: Check the upstream key exists on the controller
   ansible.builtin.stat:
     path: "{{ egress_gateway_key_src }}"
   delegate_to: localhost
@@ -22,13 +22,13 @@
   become: false
   register: egress_gateway_key_stat
 
-- name: Assert the Anthropic key is present
+- name: Assert the upstream key is present
   ansible.builtin.assert:
     that:
       - egress_gateway_key_stat.stat.exists
     fail_msg: >-
-      No Anthropic key at {{ egress_gateway_key_src }}. Place the real key there (it is
-      Tier-0 and must never enter a guest — §9), or override egress_gateway_key_src.
+      No upstream key at {{ egress_gateway_key_src }} (the LiteLLM master key by default —
+      generate with `openssl rand`). It is Tier-0 and must never enter a guest (§9).
   run_once: true
 
 - name: Create the gateway config directory
@@ -48,10 +48,10 @@
     mode: "0755"
   notify: Restart fleet-gateway
 
-- name: Install the Anthropic key
+- name: Install the upstream key
   ansible.builtin.copy:
     src: "{{ egress_gateway_key_src }}"
-    dest: "{{ egress_gateway_conf_dir }}/anthropic.key"
+    dest: "{{ egress_gateway_key_file }}"
     owner: root
     group: root
     mode: "0600"

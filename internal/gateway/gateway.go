@@ -26,10 +26,15 @@ const redacted = "[REDACTED-BY-FLEET-GATEWAY]"
 
 // Config configures the gateway.
 type Config struct {
-	// UpstreamBaseURL is the real Anthropic API base (https://api.anthropic.com).
+	// UpstreamBaseURL is the LLM upstream — LiteLLM (http://127.0.0.1:4000) since M5, or the
+	// Anthropic API directly (https://api.anthropic.com) for the single-model path.
 	UpstreamBaseURL string
-	// AnthropicKey is the real key, injected host-side; never present in a guest (I1).
-	AnthropicKey string
+	// UpstreamKey is the credential injected host-side toward the upstream — the LiteLLM master
+	// key, or the real Anthropic key — never present in a guest (I1).
+	UpstreamKey string
+	// UpstreamKeyHeader is the header the upstream key is injected under. Default "X-Api-Key"
+	// (Anthropic). LiteLLM's unambiguous proxy-auth header is "x-litellm-api-key".
+	UpstreamKeyHeader string
 	// Allowlist is the set of hostnames a guest may CONNECT to (git/registry egress).
 	// Entries beginning with "." match that domain and any subdomain.
 	Allowlist []string
@@ -47,8 +52,11 @@ type Gateway struct {
 
 // New builds a Gateway.
 func New(cfg Config) (*Gateway, error) {
-	if cfg.AnthropicKey == "" {
-		return nil, fmt.Errorf("gateway: AnthropicKey is required")
+	if cfg.UpstreamKey == "" {
+		return nil, fmt.Errorf("gateway: UpstreamKey is required")
+	}
+	if cfg.UpstreamKeyHeader == "" {
+		cfg.UpstreamKeyHeader = "X-Api-Key"
 	}
 	up, err := url.Parse(cfg.UpstreamBaseURL)
 	if err != nil || up.Host == "" {
@@ -62,6 +70,7 @@ func New(cfg Config) (*Gateway, error) {
 		Director:       g.director,
 		ModifyResponse: g.scrubResponse,
 		ErrorLog:       slog.NewLogLogger(cfg.Log.Handler(), slog.LevelWarn),
+		FlushInterval:  -1, // flush SSE frames immediately (Claude Code streams) (§10)
 	}
 	return g, nil
 }
@@ -85,16 +94,18 @@ func (g *Gateway) handleAnthropic(w http.ResponseWriter, r *http.Request) {
 	g.proxy.ServeHTTP(w, r)
 }
 
-// director rewrites the outbound request onto the real Anthropic endpoint and swaps the
-// session token for the real key.
+// director rewrites the outbound request onto the upstream and swaps the guest's session token
+// for the real upstream credential (§4.5).
 func (g *Gateway) director(r *http.Request) {
 	r.URL.Scheme = g.upstream.Scheme
 	r.URL.Host = g.upstream.Host
 	r.Host = g.upstream.Host
-	// Remove the guest's session credential and inject the real one (§4.5).
+	// Strip every credential the guest might carry, then inject the real one under the
+	// configured header. Deleting the target header too prevents a guest from smuggling one in.
 	r.Header.Del("Authorization")
 	r.Header.Del("X-Api-Key")
-	r.Header.Set("X-Api-Key", g.cfg.AnthropicKey)
+	r.Header.Del(g.cfg.UpstreamKeyHeader)
+	r.Header.Set(g.cfg.UpstreamKeyHeader, g.cfg.UpstreamKey)
 	if r.Header.Get("Anthropic-Version") == "" {
 		r.Header.Set("Anthropic-Version", "2023-06-01")
 	}
@@ -113,8 +124,8 @@ func (g *Gateway) scrubResponse(resp *http.Response) error {
 	if err != nil {
 		return err
 	}
-	if g.cfg.AnthropicKey != "" {
-		body = bytes.ReplaceAll(body, []byte(g.cfg.AnthropicKey), []byte(redacted))
+	if g.cfg.UpstreamKey != "" {
+		body = bytes.ReplaceAll(body, []byte(g.cfg.UpstreamKey), []byte(redacted))
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	resp.ContentLength = int64(len(body))

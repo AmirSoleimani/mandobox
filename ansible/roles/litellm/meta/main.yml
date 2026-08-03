@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: Chelodo
+  description: Native LiteLLM proxy for model routing between the egress gateway and providers (M5, §10).
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - fleet
+    - litellm
+dependencies: []

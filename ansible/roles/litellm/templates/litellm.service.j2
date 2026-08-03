@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+[Unit]
+Description=LiteLLM proxy (model routing, PLAN §10)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ litellm_user }}
+Group={{ litellm_user }}
+EnvironmentFile={{ litellm_conf_dir }}/litellm.env
+ExecStart={{ litellm_venv }}/bin/litellm --config {{ litellm_conf_dir }}/config.yaml --host {{ litellm_host }} --port {{ litellm_port }}
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
