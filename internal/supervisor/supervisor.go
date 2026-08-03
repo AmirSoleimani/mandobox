@@ -14,9 +14,9 @@ const (
 	workspaceDevice   = "/dev/vdb"
 	heartbeatInterval = 30 * time.Second
 	// keepAliveWindow is the guest-side idle backstop: how long the VM stays warm waiting for a
-	// follow-up message before parking itself. The control plane normally tears the VM down
-	// sooner (its keep-alive timer is shorter), so this only fires if the control plane is gone.
-	keepAliveWindow = 6 * time.Minute
+	// follow-up message before parking itself. Kept well above the control plane's keep-alive
+	// timer so the control plane always tears down first; this only fires if it is gone.
+	keepAliveWindow = 20 * time.Minute
 )
 
 // Deps are the injected collaborators, so orchestration is unit-testable with fakes.
@@ -177,10 +177,12 @@ func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool) 
 	}
 	tokens := res.Usage.InputTokens + res.Usage.OutputTokens
 	if !changed {
-		// A no-op turn is a legitimate outcome, not a crash (§13).
+		// A no-op turn is a legitimate outcome, not a crash (§13) — it's usually the agent
+		// answering a question rather than editing. Carry its words so the thread stays a
+		// conversation, not a bare "no changes".
 		s.deps.Log.Info("agent produced no changes")
 		return s.deps.Bus.Event(Event{Type: EventPushDone, Stage: "no_changes",
-			CostUSD: res.TotalCostUSD, Tokens: tokens})
+			Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens})
 	}
 	if err := s.git.Push(ctx); err != nil {
 		return s.failf(err, "git_push")
@@ -192,10 +194,10 @@ func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool) 
 		}
 		s.deps.Log.Info("opened PR", "number", number, "url", url)
 		return s.deps.Bus.Event(Event{Type: EventPROpened, PRNumber: number, PRURL: url,
-			CommitSHA: sha, CostUSD: res.TotalCostUSD, Tokens: tokens})
+			CommitSHA: sha, Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens})
 	}
 	return s.deps.Bus.Event(Event{Type: EventPushDone, CommitSHA: sha,
-		CostUSD: res.TotalCostUSD, Tokens: tokens})
+		Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens})
 }
 
 // failf publishes an agent_failed event and returns the wrapped error.
@@ -318,13 +320,21 @@ const autonomousPreamble = "You are running non-interactively, with no human ava
 	"and do NOT open a pull request: committing, pushing, and the PR are handled automatically " +
 	"once you finish. Just make the file changes (and run tests or tools if useful).\n\n"
 
-// resumePrompt assembles a resume instruction, folding in any queued steering messages. The
-// same branch and existing PR are reused automatically; the agent only edits (§8.2).
+// collaboratePreamble frames a resume turn as a chat with the reviewer: answer questions, make
+// changes when asked, keep the final message conversational (it is posted back as the reply).
+// Not autonomousPreamble — that pushes "edit files, don't ask", which is wrong for a question.
+const collaboratePreamble = "You are collaborating on an open pull request with a human in a chat " +
+	"thread. Your previous work is already in this workspace on its branch. Do NOT run git commit, " +
+	"git push, or gh, and do NOT open a pull request — committing, pushing, and updating the PR are " +
+	"handled for you automatically. Below are the human's new message(s). If a message is a question " +
+	"or discussion, just answer it — do not change files. If it asks for a change, make it by editing " +
+	"files. Keep your final message short and conversational: it is posted straight back to them as " +
+	"your reply, so address them directly.\n\n"
+
+// resumePrompt assembles a resume turn from the reviewer's messages (§8.2).
 func resumePrompt(instructions, queued []string) string {
 	var b strings.Builder
-	b.WriteString(autonomousPreamble)
-	b.WriteString("You are continuing an existing task on its branch; your previous changes are " +
-		"already present in this workspace. Address the following review feedback by editing files.\n\n")
+	b.WriteString(collaboratePreamble)
 	for _, in := range instructions {
 		fmt.Fprintf(&b, "- %s\n", in)
 	}
