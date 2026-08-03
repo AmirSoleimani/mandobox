@@ -34,6 +34,9 @@ func (s *PRWorkflowSuite) Test_ReviewComment_Resume_Then_Merge() {
 	var a *control.Activities
 
 	env.OnActivity(a.PostSlack, mock.Anything, mock.Anything).Return(control.PostSlackResult{}, nil)
+	var delivered int
+	env.OnActivity(a.DeliverMessage, mock.Anything, mock.Anything).
+		Return(func(_ context.Context, _ control.DeliverParams) error { delivered++; return nil })
 	env.OnActivity(a.MintCredentials, mock.Anything, mock.Anything).
 		Return(control.Credentials{GitHubToken: "t"}, nil)
 	env.OnActivity(a.LaunchVM, mock.Anything, mock.Anything).
@@ -76,6 +79,8 @@ func (s *PRWorkflowSuite) Test_ReviewComment_Resume_Then_Merge() {
 	s.Equal("merged", st.Phase)
 	s.InDelta(0.7, st.CumulativeCostUSD, 0.0001)
 	s.True(purged, "merging must purge the workspace")
+	s.GreaterOrEqual(delivered, 1, "the review round must be delivered to the warm VM")
+	env.AssertNumberOfCalls(s.T(), "LaunchVM", 1) // warm: no relaunch for the review round
 	env.AssertExpectations(s.T())
 }
 
