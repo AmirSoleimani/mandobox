@@ -168,15 +168,25 @@ func (g *GitHubApp) FindOpenPRByBranch(ctx context.Context, repo, branch string)
 	return prs[0].Number, prs[0].HTMLURL, nil
 }
 
-// PostPRComment posts a comment on the pull request so the agent's reply lands where a reviewer
-// asked — in the PR itself, not only in Slack (§6.4 unified context). A PR is an issue for the
-// comments API.
+// PostPRComment posts a top-level comment on the pull request (a PR is an issue for the comments
+// API) — used when the reply isn't in response to a specific inline review comment.
 func (g *GitHubApp) PostPRComment(ctx context.Context, repo string, prNumber int, body string) error {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d/comments", repo, prNumber)
+	return g.postComment(ctx, "post pr comment", url, body)
+}
+
+// PostReviewCommentReply threads a reply under a specific inline review comment, so the agent's
+// answer lands right where the reviewer asked (§6.4).
+func (g *GitHubApp) PostReviewCommentReply(ctx context.Context, repo string, prNumber int, commentID int64, body string) error {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/pulls/%d/comments/%d/replies", repo, prNumber, commentID)
+	return g.postComment(ctx, "reply to review comment", url, body)
+}
+
+func (g *GitHubApp) postComment(ctx context.Context, what, url, body string) error {
 	token, err := g.MintInstallationToken(ctx)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d/comments", repo, prNumber)
 	payload, err := json.Marshal(map[string]string{"body": body})
 	if err != nil {
 		return err
@@ -196,7 +206,7 @@ func (g *GitHubApp) PostPRComment(ctx context.Context, repo string, prNumber int
 	defer resp.Body.Close()
 	rb, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("post pr comment: %s: %s", resp.Status, strings.TrimSpace(string(rb)))
+		return fmt.Errorf("%s: %s: %s", what, resp.Status, strings.TrimSpace(string(rb)))
 	}
 	return nil
 }
