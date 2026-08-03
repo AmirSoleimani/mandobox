@@ -32,6 +32,7 @@ type gateway struct {
 	imageSHA   string // pinned via env; if empty, resolved from shaFile per dispatch
 	shaFile    string // /var/lib/fleet/images/current.sha — tracks the active golden image
 	model      string
+	cheapModel string
 	baseBranch string
 	botUserID  string
 }
@@ -70,7 +71,8 @@ func main() {
 		namespace:  env("TEMPORAL_NAMESPACE", "fleet"),
 		imageSHA:   os.Getenv("IMAGE_SHA"),
 		shaFile:    env("FLEET_IMAGE_SHA_FILE", "/var/lib/fleet/images/current.sha"),
-		model:      env("CLAUDE_MODEL", "default"), // LiteLLM routing alias (§10)
+		model:      env("CLAUDE_MODEL", "claude-sonnet-5"),        // real model id (§10)
+		cheapModel: env("CLAUDE_CHEAP_MODEL", "claude-haiku-4-5-20251001"),
 		baseBranch: env("BASE_BRANCH", "main"),
 	}
 	if auth, err := api.AuthTest(); err == nil {
@@ -113,7 +115,7 @@ func (g *gateway) handleSlash(cmd slack.SlashCommand) string {
 	// Optional leading --cheap routes to the cheap model class (§10).
 	model := g.model
 	if rest, found := strings.CutPrefix(text, "--cheap "); found {
-		model, text = "cheap", strings.TrimSpace(rest)
+		model, text = g.cheapModel, strings.TrimSpace(rest)
 	}
 	repo, prompt, ok := strings.Cut(text, " ")
 	if !ok || !strings.Contains(repo, "/") {

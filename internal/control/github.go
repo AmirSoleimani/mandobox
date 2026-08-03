@@ -127,6 +127,46 @@ func (g *GitHubApp) resolveInstallationID(ctx context.Context, jwt string) (stri
 	return strconv.FormatInt(out.ID, 10), nil
 }
 
+// FindOpenPRByBranch returns the open PR whose head is `branch` in `repo` (owner/name), or
+// (0, "") if none. Used to reconcile after a run whose pr_opened event was lost — NATS is
+// at-most-once, so a real PR must never be mistaken for "no PR" (§6).
+func (g *GitHubApp) FindOpenPRByBranch(ctx context.Context, repo, branch string) (int, string, error) {
+	token, err := g.MintInstallationToken(ctx)
+	if err != nil {
+		return 0, "", err
+	}
+	owner, _, _ := strings.Cut(repo, "/")
+	url := fmt.Sprintf("https://api.github.com/repos/%s/pulls?state=open&head=%s:%s&per_page=1",
+		repo, owner, branch)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	resp, err := g.httpc.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode/100 != 2 {
+		return 0, "", fmt.Errorf("list prs: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var prs []struct {
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+	}
+	if err := json.Unmarshal(body, &prs); err != nil {
+		return 0, "", err
+	}
+	if len(prs) == 0 {
+		return 0, "", nil
+	}
+	return prs[0].Number, prs[0].HTMLURL, nil
+}
+
 func (g *GitHubApp) apiJSON(ctx context.Context, method, url, jwt string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {

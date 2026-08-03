@@ -33,7 +33,9 @@ func main() {
 		BaseBranch: env("BASE_BRANCH", "main"),
 		Prompt:     env("PROMPT", "Make a small, well-scoped improvement and open a PR."),
 		ImageSHA:   imageSHA,
-		Model:      env("CLAUDE_MODEL", "default"), // LiteLLM routing alias (§10): default|cheap
+		// Real model ID — Claude Code expands its own aliases, so pass a concrete id; LiteLLM
+		// routes it (§10). Use a cheaper id (e.g. claude-haiku-4-5-20251001) for cheap work.
+		Model: env("CLAUDE_MODEL", "claude-sonnet-5"),
 		VCPUs:      atoi(env("VCPUS", "2")),
 		MemMiB:     atoi(env("MEM_MIB", "4096")),
 	}
