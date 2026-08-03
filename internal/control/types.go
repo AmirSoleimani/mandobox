@@ -46,7 +46,9 @@ func (p Policy) withDefaults() Policy {
 		p.CostCeilingUSD = 15
 	}
 	if p.HardTTL == 0 {
-		p.HardTTL = 24 * time.Hour // D2: 24h while iterating, not 14d.
+		// The workflow lives as long as the PR: merge/close ends it via webhook; this is only the
+		// backstop that reaps a workflow for an abandoned PR (§6.1).
+		p.HardTTL = 14 * 24 * time.Hour
 	}
 	if p.ReviewDebounce == 0 {
 		// A short coalescing window, not the old 90s debounce: with a warm VM we deliver almost
@@ -110,8 +112,9 @@ const (
 type ReviewCommentSignal struct {
 	Body       string `json:"body"`
 	Author     string `json:"author"`
-	Path       string `json:"path,omitempty"` // file the inline comment is on (review comments)
-	Line       int    `json:"line,omitempty"` // line the inline comment is on
+	Path       string `json:"path,omitempty"`       // file the inline comment is on (review comments)
+	Line       int    `json:"line,omitempty"`       // line the inline comment is on
+	CommentID  int64  `json:"comment_id,omitempty"` // review-comment id, so the reply threads under it
 	DeliveryID string `json:"delivery_id"`
 }
 

@@ -91,6 +91,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 		coalesce                workflow.Future // short window batching a burst into one turn
 		keepAlive               workflow.Future // warmth timer; firing parks the idle VM
 		pendingFromPR           bool            // batch includes GitHub feedback → mirror reply to the PR
+		pendingReplyToID        int64           // inline review-comment id to thread the reply under
 	)
 	armKeepAlive := func() {
 		if st.VMState == vmRunning {
@@ -118,6 +119,9 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 			}
 			st.PendingInstructions = append(st.PendingInstructions, githubCommentInstruction(s))
 			gotFeedback, pendingFromPR = true, true
+			if s.CommentID != 0 {
+				pendingReplyToID = s.CommentID // reply threads under the most recent inline comment
+			}
 		})
 		sel.AddReceive(reviewSubmitted, func(c workflow.ReceiveChannel, _ bool) {
 			var s ReviewSubmittedSignal
@@ -185,8 +189,8 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 			coalesce = nil
 			if len(st.PendingInstructions) > 0 && !closed && !aborted {
 				instructions := st.PendingInstructions
-				fromPR := pendingFromPR
-				st.PendingInstructions, pendingFromPR = nil, false
+				fromPR, replyToID := pendingFromPR, pendingReplyToID
+				st.PendingInstructions, pendingFromPR, pendingReplyToID = nil, false, 0
 				st.ReviewRound++
 				log.Info("review round", "round", st.ReviewRound, "items", len(instructions),
 					"warm", st.VMState == vmRunning)
@@ -207,7 +211,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 				} else {
 					reportPhase(ctx, st, r)
 					if fromPR { // feedback came from GitHub — put the reply back in the PR too
-						postPRReply(ctx, st, r.Reply)
+						postPRReply(ctx, st, r.Reply, replyToID)
 					}
 				}
 				st.Phase = "awaiting_review"
@@ -478,14 +482,14 @@ func githubCommentInstruction(s ReviewCommentSignal) string {
 
 // postPRReply mirrors the agent's reply into the PR so a GitHub reviewer sees the response in
 // place (not only in Slack). Best-effort — a GitHub failure never fails the task.
-func postPRReply(ctx workflow.Context, st *State, reply string) {
+func postPRReply(ctx workflow.Context, st *State, reply string, replyToID int64) {
 	reply = strings.TrimSpace(reply)
 	if reply == "" || st.PRNumber == 0 {
 		return
 	}
 	var a *Activities
 	_ = workflow.ExecuteActivity(slackCtx(ctx), a.PostPRComment,
-		PostPRCommentParams{Repo: st.Repo, PRNumber: st.PRNumber, Body: reply}).Get(ctx, nil)
+		PostPRCommentParams{Repo: st.Repo, PRNumber: st.PRNumber, Body: reply, ReplyToID: replyToID}).Get(ctx, nil)
 }
 
 // ---- per-activity option contexts (retry + timeout tuned per PLAN §6.1) ----

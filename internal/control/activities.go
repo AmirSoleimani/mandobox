@@ -80,15 +80,21 @@ func (a *Activities) CheckPR(ctx context.Context, p CheckPRParams) (CheckPRResul
 	return CheckPRResult{Number: n, URL: url}, nil
 }
 
-// PostPRCommentParams posts the agent's reply back onto the PR.
+// PostPRCommentParams posts the agent's reply back onto the PR. ReplyToID, when set, threads it
+// under that inline review comment; otherwise it's a top-level PR comment.
 type PostPRCommentParams struct {
-	Repo     string `json:"repo"`
-	PRNumber int    `json:"pr_number"`
-	Body     string `json:"body"`
+	Repo      string `json:"repo"`
+	PRNumber  int    `json:"pr_number"`
+	Body      string `json:"body"`
+	ReplyToID int64  `json:"reply_to_id,omitempty"`
 }
 
-// PostPRComment mirrors a reply into the PR thread so a GitHub reviewer sees it in place (§6.4).
+// PostPRComment mirrors a reply into the PR — threaded under the reviewer's inline comment when
+// there is one, so they see the answer right where they asked (§6.4).
 func (a *Activities) PostPRComment(ctx context.Context, p PostPRCommentParams) error {
+	if p.ReplyToID != 0 {
+		return a.App.PostReviewCommentReply(ctx, p.Repo, p.PRNumber, p.ReplyToID, p.Body)
+	}
 	return a.App.PostPRComment(ctx, p.Repo, p.PRNumber, p.Body)
 }
 
