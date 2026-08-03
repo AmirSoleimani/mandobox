@@ -170,7 +170,30 @@ microVM is the sandbox, and Claude refuses bypass-as-root otherwise) so it can r
 it must NOT run git/gh itself — the supervisor commits, pushes, and opens/updates the PR. The
 reaper additionally sweeps any Firecracker process left with no state dir (`ORPHAN_GRACE`).
 
-## What is not wired yet (M5+)
+## M5 — Slack + model routing
 
-Slack thread rendering + `needs_input` round-trip, the final cost summary, and LiteLLM model
-routing (§10). NATS is still unauthenticated (single box); per-session JWT scoping is deferred.
+**LiteLLM (deployed):** the egress gateway now proxies the LLM path to a native LiteLLM proxy
+(`127.0.0.1:4000`, `litellm` role) which holds the real Anthropic key and routes by the `model`
+field. Config is a wildcard passthrough (`* → anthropic/*`) since Claude Code sends real model
+IDs; add `litellm_model_overrides` to send a model to another provider. Dispatch with a real ID:
+default `claude-sonnet-5`, cheap `claude-haiku-4-5-20251001` (`CLAUDE_MODEL=…` or `/fleet --cheap`).
+The gateway injects the LiteLLM master key under `x-litellm-api-key`.
+
+**Slack (code-complete; needs your tokens):** one thread per session with milestones + a final
+cost summary; `/fleet [--cheap] <owner/repo> <prompt>` dispatches; a thread reply steers the run
+(user_message). Socket Mode — no public ingress. To activate:
+
+```sh
+printf '%s' 'xoxb-…' > secrets/slack-bot-token     # bot token
+printf '%s' 'xapp-…' > secrets/slack-app-token     # app-level token (Socket Mode)
+printf '%s' 'C0…'    > secrets/slack-channel       # default channel id
+ansible-playbook deploy.yml --tags control_plane
+```
+
+Without those, the worker's Slack posts no-op and `slack-gateway` stays stopped — everything else
+runs unchanged.
+
+## Not wired yet (M6)
+
+Raising concurrency (five concurrent sessions, no cross-talk). NATS is still unauthenticated
+(single box); per-session JWT scoping is deferred.
