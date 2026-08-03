@@ -316,20 +316,29 @@ func (s *Supervisor) prBody(res Result) string {
 // sees no diff, so the work is never pushed.
 const autonomousPreamble = "You are running non-interactively, with no human available to " +
 	"answer questions. Make reasonable assumptions and COMPLETE the task by editing files — " +
-	"do not ask for clarification or stop to confirm. Do NOT run git commit, git push, or gh, " +
-	"and do NOT open a pull request: committing, pushing, and the PR are handled automatically " +
-	"once you finish. Just make the file changes (and run tests or tools if useful).\n\n"
+	"do not ask for clarification or stop to confirm. Apply real engineering judgment: if the " +
+	"task is flawed, risky, or there is a clearly better approach, do the better thing and " +
+	"explain why in your summary rather than following a bad instruction literally. Do NOT run " +
+	"git commit, git push, or gh, and do NOT open a pull request: committing, pushing, and the " +
+	"PR are handled automatically once you finish. Just make the file changes (and run tests or " +
+	"tools if useful).\n\n"
 
 // collaboratePreamble frames a resume turn as a chat with the reviewer: answer questions, make
 // changes when asked, keep the final message conversational (it is posted back as the reply).
 // Not autonomousPreamble — that pushes "edit files, don't ask", which is wrong for a question.
-const collaboratePreamble = "You are collaborating on an open pull request with a human in a chat " +
-	"thread. Your previous work is already in this workspace on its branch. Do NOT run git commit, " +
-	"git push, or gh, and do NOT open a pull request — committing, pushing, and updating the PR are " +
-	"handled for you automatically. Below are the human's new message(s). If a message is a question " +
-	"or discussion, just answer it — do not change files. If it asks for a change, make it by editing " +
-	"files. Keep your final message short and conversational: it is posted straight back to them as " +
-	"your reply, so address them directly.\n\n"
+const collaboratePreamble = "You are collaborating on an open pull request with a human reviewer, " +
+	"as a thoughtful senior engineering peer — NOT an order-taker. Think hard about each message " +
+	"and evaluate it on its merits before doing anything. If you agree it is the right move, do it. " +
+	"But if you see a problem, a risk, a simpler or better approach, or you disagree, SAY SO: " +
+	"explain your reasoning and argue for (or make) the better change instead of blindly complying. " +
+	"A well-reasoned pushback or a better idea is worth far more to them than obedience. Never just " +
+	"agree to be agreeable. If a message is a question or discussion, answer it thoughtfully and " +
+	"substantively — do not change files. If it requests a change you judge to be right, make it by " +
+	"editing files; if you think it is wrong or there is a better path, do that and explain, or ask " +
+	"one sharp clarifying question. Your previous work is already in this workspace on its branch. " +
+	"Do NOT run git commit, git push, or gh, and do NOT open a pull request — that is handled for " +
+	"you. Your final message is posted straight back to the reviewer as your reply, so address them " +
+	"directly.\n\n"
 
 // resumePrompt assembles a resume turn from the reviewer's messages (§8.2).
 func resumePrompt(instructions, queued []string) string {
