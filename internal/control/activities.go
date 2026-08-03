@@ -58,6 +58,28 @@ func (a *Activities) LaunchVM(ctx context.Context, p LaunchParams) (LaunchResult
 	return a.Fleet.Launch(ctx, req)
 }
 
+// CheckPRParams reconciles a branch against GitHub.
+type CheckPRParams struct {
+	Repo   string `json:"repo"`
+	Branch string `json:"branch"`
+}
+
+// CheckPRResult is the open PR found for the branch (Number 0 if none).
+type CheckPRResult struct {
+	Number int    `json:"number"`
+	URL    string `json:"url"`
+}
+
+// CheckPR asks GitHub whether the branch already has an open PR — the source of truth when the
+// guest's pr_opened event was lost in transit (§6).
+func (a *Activities) CheckPR(ctx context.Context, p CheckPRParams) (CheckPRResult, error) {
+	n, url, err := a.App.FindOpenPRByBranch(ctx, p.Repo, p.Branch)
+	if err != nil {
+		return CheckPRResult{}, err
+	}
+	return CheckPRResult{Number: n, URL: url}, nil
+}
+
 // DestroyParams selects a session and whether to also discard its workspace.
 type DestroyParams struct {
 	SessionID      string `json:"session_id"`
@@ -94,8 +116,10 @@ func (a *Activities) DeliverMessage(ctx context.Context, p DeliverParams) error 
 }
 
 // phaseLivenessWindow: if no guest heartbeat arrives for this long (with no terminal event),
-// treat the VM as lost. Generous enough to cover boot + clone before the first heartbeat.
-const phaseLivenessWindow = 180 * time.Second
+// treat the VM as lost. Generous enough to cover boot + clone before the first heartbeat, and a
+// long quiet LLM turn. A false vm_lost is still recoverable — the workflow reconciles the PR
+// against GitHub — but a wider window avoids the churn.
+const phaseLivenessWindow = 5 * time.Minute
 
 // RunAgentPhase subscribes to the guest's NATS event stream, heartbeats to Temporal, and
 // returns the first terminal outcome (pr_opened | push_done | agent_failed | needs_input). If

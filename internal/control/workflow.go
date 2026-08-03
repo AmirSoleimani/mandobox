@@ -47,7 +47,14 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	recordOutcome(ctx, st, in, res)
 	reportPhase(ctx, st, res)
 
-	// If the first run never opened a PR, there is nothing to review — tear down and finish.
+	// The pr_opened event travels over NATS (at-most-once); if it was lost — e.g. the run went
+	// quiet and RunAgentPhase gave up while the guest went on to open the PR — reconcile with
+	// GitHub so a real PR is never mistaken for "no PR" (§6).
+	if st.PRNumber == 0 {
+		reconcilePR(ctx, st)
+	}
+
+	// If the first run genuinely opened no PR, there is nothing to review — tear down and finish.
 	if st.PRNumber == 0 {
 		st.Phase = "no_pr"
 		destroyWorkspace(ctx, st)
@@ -257,6 +264,21 @@ func slackCtx(ctx workflow.Context) workflow.Context {
 	})
 }
 
+// reconcilePR adopts an open PR that exists on the branch but whose pr_opened event never
+// arrived (lost NATS message), so the workflow tracks it instead of tearing down.
+func reconcilePR(ctx workflow.Context, st *State) {
+	var a *Activities
+	var chk CheckPRResult
+	if err := workflow.ExecuteActivity(slackCtx(ctx), a.CheckPR,
+		CheckPRParams{Repo: st.Repo, Branch: st.HeadBranch}).Get(ctx, &chk); err == nil && chk.Number != 0 {
+		st.PRNumber, st.PRURL = chk.Number, chk.URL
+		_ = workflow.UpsertTypedSearchAttributes(ctx,
+			temporal.NewSearchAttributeKeyInt64(SAPRNumber).ValueSet(int64(chk.Number)))
+		slackNote(ctx, st, fmt.Sprintf(":mag: Recovered PR <%s|#%d> (its open event was lost in transit).",
+			chk.URL, chk.Number))
+	}
+}
+
 func truncate(s string, n int) string {
 	if len(s) > n {
 		return s[:n] + "…"
@@ -362,7 +384,7 @@ func launchCtx(ctx workflow.Context) workflow.Context {
 func phaseCtx(ctx workflow.Context) workflow.Context {
 	return workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 6 * time.Hour,
-		HeartbeatTimeout:    90 * time.Second,
+		HeartbeatTimeout:    5 * time.Minute, // margin over the SDK's throttled heartbeats
 		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1}, // a run is not idempotent
 	})
 }

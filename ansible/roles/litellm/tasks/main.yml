@@ -32,12 +32,45 @@
     creates: "{{ litellm_venv }}/bin/python"
   become_user: "{{ litellm_user }}"
 
+# litellm 1.95.0 requires fastapi>=0.136.3 but its proxy imports get_flat_dependant, removed in
+# fastapi 0.113 — so we install litellm, then force fastapi back down. Both steps are guarded on
+# the installed version: on re-run they SKIP, so pip never re-resolves (which would revert the
+# fastapi pin and, as litellm-user, fail). Runs as the litellm user with HOME set (no home dir
+# → no writable pip cache) and --no-cache-dir.
+- name: Check the installed litellm version
+  ansible.builtin.command: "{{ litellm_venv }}/bin/pip show litellm"
+  register: litellm_show
+  changed_when: false
+  failed_when: false
+
 - name: Install litellm[proxy] into the venv
   ansible.builtin.pip:
-    name: "litellm[proxy]{{ ('==' + litellm_version) if litellm_version else '' }}"
-    state: "{{ 'present' if litellm_version else 'latest' }}"
+    name: "litellm[proxy]=={{ litellm_version }}"
     virtualenv: "{{ litellm_venv }}"
+    extra_args: --no-cache-dir
   become_user: "{{ litellm_user }}"
+  environment:
+    HOME: /opt/litellm
+  when: "'Version: ' + litellm_version not in litellm_show.stdout"
+  notify: Restart litellm
+
+- name: Check the installed fastapi version
+  ansible.builtin.command: "{{ litellm_venv }}/bin/pip show fastapi"
+  register: litellm_fastapi_show
+  changed_when: false
+  failed_when: false
+
+- name: Pin a fastapi compatible with the litellm proxy
+  ansible.builtin.pip:
+    name: "fastapi=={{ litellm_fastapi_pin }}"
+    virtualenv: "{{ litellm_venv }}"
+    extra_args: --no-cache-dir
+  become_user: "{{ litellm_user }}"
+  environment:
+    HOME: /opt/litellm
+  when:
+    - litellm_fastapi_pin | length > 0
+    - "'Version: ' + litellm_fastapi_pin not in litellm_fastapi_show.stdout"
   notify: Restart litellm
 
 - name: Install the litellm config

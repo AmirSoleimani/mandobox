@@ -8,13 +8,19 @@ litellm_conf_dir: /etc/litellm
 litellm_user: litellm
 litellm_host: "127.0.0.1"
 litellm_port: 4000
-# Empty → install the latest litellm[proxy]; pin (e.g. "1.74.0") for reproducibility once known.
-litellm_version: ""
+# Pinned to a verified pair. litellm 1.95.0's proxy imports fastapi.get_flat_dependant, which
+# fastapi removed in 0.113, but the [proxy] extra resolves fastapi to latest — so we force
+# fastapi back down to the last release that still has it. Bump both together after testing.
+litellm_version: "1.95.0"
+litellm_fastapi_pin: "0.112.4"
 
-# Routing table (task class → provider model). The guest's claude --model sends the alias.
-litellm_models:
-  - {alias: default, model: "anthropic/claude-sonnet-5"}
-  - {alias: cheap, model: "anthropic/claude-haiku-4-5-20251001"}
+# Routing overrides: send a specific model to a specific (possibly non-Anthropic) provider.
+# Claude Code sends REAL model IDs (it expands its own aliases like "default"), and also uses a
+# small-fast model — so the base is a wildcard passthrough to Anthropic (see config.yaml.j2),
+# and these overrides win for named models. Empty by default = pure passthrough. Example, to
+# route the cheap class through OpenRouter:
+#   - {name: "claude-haiku-4-5-20251001", model: "openrouter/anthropic/claude-3.5-haiku"}
+litellm_model_overrides: []
 
 # Secrets (Tier-0, gitignored, host-side only).
 litellm_anthropic_key_src: "{{ playbook_dir }}/../secrets/anthropic.key"

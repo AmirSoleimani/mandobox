@@ -1,13 +1,22 @@
 {{ '#' }} {{ ansible_managed }}
-{{ '#' }} Static model_list — no database. The guest's claude --model sends the alias
-{{ '#' }} (model_name); LiteLLM routes it to the provider model and injects the real key.
+{{ '#' }} No database. Claude Code sends real Anthropic model IDs (it expands its own aliases)
+{{ '#' }} plus a small-fast model, so the base is a wildcard passthrough to Anthropic; named
+{{ '#' }} overrides win and can point a model at a cheaper provider (§10).
 model_list:
-{% for m in litellm_models %}
-  - model_name: {{ m.alias }}
+{% for m in litellm_model_overrides %}
+  - model_name: "{{ m.name }}"
     litellm_params:
-      model: {{ m.model }}
+      model: "{{ m.model }}"
+{% if m.api_key is defined %}
+      api_key: {{ m.api_key }}
+{% else %}
       api_key: os.environ/ANTHROPIC_API_KEY
+{% endif %}
 {% endfor %}
+  - model_name: "*"
+    litellm_params:
+      model: "anthropic/*"
+      api_key: os.environ/ANTHROPIC_API_KEY
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
