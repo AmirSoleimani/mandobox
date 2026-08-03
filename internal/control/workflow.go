@@ -104,9 +104,11 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	st.Phase = "awaiting_review"
 	armKeepAlive()
 	slackNote(ctx, st, ":speech_balloon: Session's warm — reply in this thread with any changes and I'll jump on them.")
-	for !closed && !aborted &&
-		st.ReviewRound < in.Policy.MaxReviewRounds &&
-		st.CumulativeCostUSD < in.Policy.CostCeilingUSD {
+	// The session lives as long as the PR: it keeps answering comments (and keeps the workspace,
+	// so the agent's transcript retains the whole PR conversation) until the PR is merged/closed
+	// or aborted. Rounds and cost are tracked for the summary, not used to end the session — a
+	// human-driven back-and-forth must not be cut off at an arbitrary count.
+	for !closed && !aborted {
 
 		gotFeedback, coalesceFired, keepAliveFired := false, false, false
 		sel := workflow.NewSelector(ctx)
@@ -230,14 +232,15 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	}
 
 	// ---- teardown ----
-	if aborted {
-		st.Phase = "aborted:" + abortReason
-	} else if merged {
+	switch {
+	case merged:
 		st.Phase = "merged"
-	} else if closed {
+	case closed:
 		st.Phase = "closed"
-	} else {
-		st.Phase = "review_budget_exhausted"
+	case aborted:
+		st.Phase = "aborted:" + abortReason
+	default:
+		st.Phase = "ended"
 	}
 	destroyWorkspace(ctx, st)
 	finalSummary(ctx, st, startTime)
