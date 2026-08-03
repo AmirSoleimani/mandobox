@@ -135,7 +135,8 @@ func mapEvent(event, delivery string, body []byte) (signal, string, int, bool) {
 	switch event {
 	case "pull_request_review_comment":
 		return signal{control.SignalReviewComment, control.ReviewCommentSignal{
-			Body: p.Comment.Body, Author: p.Comment.User.Login, DeliveryID: delivery,
+			Body: p.Comment.Body, Author: p.Comment.User.Login,
+			Path: p.Comment.Path, Line: p.Comment.Line, DeliveryID: delivery,
 		}}, repo, p.PullRequest.Number, true
 	case "issue_comment":
 		if p.Issue.PullRequest == nil { // only PR comments matter
@@ -184,6 +185,8 @@ type githubPayload struct {
 	} `json:"issue"`
 	Comment struct {
 		Body string `json:"body"`
+		Path string `json:"path"` // inline review comments carry the file + line
+		Line int    `json:"line"`
 		User struct {
 			Login string `json:"login"`
 		} `json:"user"`

@@ -110,6 +110,8 @@ const (
 type ReviewCommentSignal struct {
 	Body       string `json:"body"`
 	Author     string `json:"author"`
+	Path       string `json:"path,omitempty"` // file the inline comment is on (review comments)
+	Line       int    `json:"line,omitempty"` // line the inline comment is on
 	DeliveryID string `json:"delivery_id"`
 }
 

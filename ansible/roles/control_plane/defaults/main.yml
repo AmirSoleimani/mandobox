@@ -38,4 +38,6 @@ control_plane_temporal_namespace: fleet
 control_plane_fleet_url: "https://127.0.0.1:9443"
 control_plane_nats_url: "nats://172.31.0.1:4222"
 control_plane_gateway_url: "http://172.31.0.1:8080"
-control_plane_webhook_addr: "127.0.0.1:8088"
+# Public so GitHub can deliver webhooks. Every request is HMAC-verified against the webhook
+# secret, so only GitHub-signed payloads are honoured; unsigned/forged ones get 401.
+control_plane_webhook_addr: "0.0.0.0:8088"
