@@ -181,7 +181,8 @@ The gateway injects the LiteLLM master key under `x-litellm-api-key`.
 
 **Slack (code-complete; needs your tokens):** one thread per session with milestones + a final
 cost summary; `/fleet [--cheap] <owner/repo> <prompt>` dispatches; a thread reply steers the run
-(user_message). Socket Mode — no public ingress. To activate:
+(user_message). Socket Mode — no public ingress. Full guide with scenarios: [`slack.md`](slack.md).
+To activate:
 
 ```sh
 printf '%s' 'xoxb-…' > secrets/slack-bot-token     # bot token
