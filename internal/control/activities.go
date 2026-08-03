@@ -80,6 +80,18 @@ func (a *Activities) CheckPR(ctx context.Context, p CheckPRParams) (CheckPRResul
 	return CheckPRResult{Number: n, URL: url}, nil
 }
 
+// PostPRCommentParams posts the agent's reply back onto the PR.
+type PostPRCommentParams struct {
+	Repo     string `json:"repo"`
+	PRNumber int    `json:"pr_number"`
+	Body     string `json:"body"`
+}
+
+// PostPRComment mirrors a reply into the PR thread so a GitHub reviewer sees it in place (§6.4).
+func (a *Activities) PostPRComment(ctx context.Context, p PostPRCommentParams) error {
+	return a.App.PostPRComment(ctx, p.Repo, p.PRNumber, p.Body)
+}
+
 // DestroyParams selects a session and whether to also discard its workspace.
 type DestroyParams struct {
 	SessionID      string `json:"session_id"`

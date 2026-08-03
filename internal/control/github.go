@@ -1,6 +1,7 @@
 package control
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -165,6 +166,39 @@ func (g *GitHubApp) FindOpenPRByBranch(ctx context.Context, repo, branch string)
 		return 0, "", nil
 	}
 	return prs[0].Number, prs[0].HTMLURL, nil
+}
+
+// PostPRComment posts a comment on the pull request so the agent's reply lands where a reviewer
+// asked — in the PR itself, not only in Slack (§6.4 unified context). A PR is an issue for the
+// comments API.
+func (g *GitHubApp) PostPRComment(ctx context.Context, repo string, prNumber int, body string) error {
+	token, err := g.MintInstallationToken(ctx)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d/comments", repo, prNumber)
+	payload, err := json.Marshal(map[string]string{"body": body})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := g.httpc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	rb, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("post pr comment: %s: %s", resp.Status, strings.TrimSpace(string(rb)))
+	}
+	return nil
 }
 
 func (g *GitHubApp) apiJSON(ctx context.Context, method, url, jwt string, out any) error {
