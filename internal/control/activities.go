@@ -116,10 +116,11 @@ func (a *Activities) DeliverMessage(ctx context.Context, p DeliverParams) error 
 }
 
 // phaseLivenessWindow: if no guest heartbeat arrives for this long (with no terminal event),
-// treat the VM as lost. Generous enough to cover boot + clone before the first heartbeat, and a
-// long quiet LLM turn. A false vm_lost is still recoverable — the workflow reconciles the PR
-// against GitHub — but a wider window avoids the churn.
-const phaseLivenessWindow = 5 * time.Minute
+// treat the VM as lost and return so the workflow can recover instead of hanging. The guest
+// heartbeats every 30s independently of the agent (even during a long LLM call), so ~2m of
+// silence reliably means it's dead — no need to wait longer, and a false positive is still
+// recoverable (the workflow reconciles the PR and re-queues the feedback).
+const phaseLivenessWindow = 2 * time.Minute
 
 // RunAgentPhase subscribes to the guest's NATS event stream, heartbeats to Temporal, and
 // returns the first terminal outcome (pr_opened | push_done | agent_failed | needs_input). If
