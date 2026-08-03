@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -69,6 +70,13 @@ func (d *FirecrackerDriver) Launch(ctx context.Context, spec LaunchSpec) (Launch
 	instance := d.instanceDir(spec.Session)
 	root := filepath.Join(instance, "root")
 	sock := filepath.Join(root, "firecracker.socket")
+
+	// Kill any orphaned Firecracker still running for this session (e.g. a warm VM whose teardown
+	// didn't fully take) before relaunching — two VMs on the same session_id share a tap and MMDS
+	// address and would collide.
+	for _, pid := range sessionFirecrackerPIDs(jailerID(spec.Session)) {
+		killProcess(pid, 3*time.Second)
+	}
 
 	// Fresh chroot each boot — no snapshots, no reused state (PLAN §4.2).
 	if err := os.RemoveAll(instance); err != nil {
@@ -225,6 +233,12 @@ func (d *FirecrackerDriver) Destroy(_ context.Context, rec VMRecord) error {
 	if rec.PID > 0 {
 		killProcess(rec.PID, 5*time.Second)
 	}
+	// Belt-and-suspenders: kill any Firecracker still running for this session even if the
+	// recorded pid was wrong or the process outlived the SIGKILL above — otherwise it orphans and
+	// collides with a relaunch of the same session.
+	for _, pid := range sessionFirecrackerPIDs(jailerID(rec.Session)) {
+		killProcess(pid, 3*time.Second)
+	}
 	dir := rec.Chroot
 	if dir == "" {
 		dir = d.instanceDir(rec.Session)
@@ -278,7 +292,9 @@ func waitForSocket(path string, timeout time.Duration) error {
 	}
 }
 
-// killProcess sends SIGTERM then, after grace, SIGKILL.
+// killProcess sends SIGTERM then, after grace, SIGKILL, and waits briefly to confirm the process
+// is actually gone — a VM wedged in uninterruptible I/O can defer SIGKILL, and callers that then
+// remove state must not race a still-live process (that orphan would collide with a relaunch).
 func killProcess(pid int, grace time.Duration) {
 	if pid <= 0 {
 		return
@@ -292,6 +308,39 @@ func killProcess(pid int, grace time.Duration) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	_ = syscall.Kill(pid, syscall.SIGKILL)
+	for range 60 { // up to ~3s for SIGKILL to take effect
+		if syscall.Kill(pid, 0) != nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// sessionFirecrackerPIDs finds every Firecracker process launched under this session's jailer id
+// (matched on the --id argument in /proc/<pid>/cmdline), regardless of the pid fleet-agent
+// recorded. Used to guarantee teardown and to clear a stale process before a relaunch.
+func sessionFirecrackerPIDs(jailerID string) []int {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	needle := "--id\x00" + jailerID + "\x00" // cmdline args are NUL-separated
+	var pids []int
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		data, err := os.ReadFile("/proc/" + e.Name() + "/cmdline")
+		if err != nil {
+			continue
+		}
+		s := string(data)
+		if strings.Contains(s, "firecracker") && strings.Contains(s, needle) {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
 }
 
 // udsClient returns an HTTP client bound to a unix-domain socket.

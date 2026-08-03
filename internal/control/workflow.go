@@ -195,7 +195,15 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 					r = launchWarm(ctx, in, st, supervisor.ModeResume, instructions)
 				}
 				recordOutcome(ctx, st, in, r)
-				reportPhase(ctx, st, r)
+				// If the VM dropped before it addressed the feedback, don't lose it — put it back
+				// and retry on a fresh cold session next round instead of silently swallowing it.
+				if r.Outcome == supervisor.EventAgentFailed {
+					st.PendingInstructions = append(instructions, st.PendingInstructions...)
+					coalesce = workflow.NewTimer(ctx, in.Policy.ReviewDebounce)
+					slackNote(ctx, st, ":arrows_counterclockwise: That didn't land (the session dropped) — retrying on a fresh one…")
+				} else {
+					reportPhase(ctx, st, r)
+				}
 				st.Phase = "awaiting_review"
 				armKeepAlive()
 			}
