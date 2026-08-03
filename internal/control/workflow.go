@@ -42,8 +42,8 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	// Hard TTL bounds the whole workflow (D2: 24h while iterating).
 	ttl := workflow.NewTimer(ctx, in.Policy.HardTTL)
 
-	// Initial phase: mint → launch → run → destroy (keep workspace).
-	res := runPhase(ctx, in, st, supervisor.ModeInitial, nil)
+	// Initial phase: mint → launch → run, and keep the VM warm for the review that follows.
+	res := launchWarm(ctx, in, st, supervisor.ModeInitial, nil)
 	recordOutcome(ctx, st, in, res)
 	reportPhase(ctx, st, res)
 
@@ -88,19 +88,25 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	var (
 		closed, merged, aborted bool
 		abortReason             string
-		debounce                workflow.Future // armed on the first pending instruction
+		coalesce                workflow.Future // short window batching a burst into one turn
+		keepAlive               workflow.Future // warmth timer; firing parks the idle VM
 	)
-	arm := func() {
-		if debounce == nil {
-			debounce = workflow.NewTimer(ctx, in.Policy.ReviewDebounce)
+	armKeepAlive := func() {
+		if st.VMState == vmRunning {
+			keepAlive = workflow.NewTimer(ctx, in.Policy.KeepAlive)
+		} else {
+			keepAlive = nil
 		}
 	}
 
 	st.Phase = "awaiting_review"
+	armKeepAlive()
+	slackNote(ctx, st, ":speech_balloon: Session's warm — reply in this thread with any changes and I'll jump on them.")
 	for !closed && !aborted &&
 		st.ReviewRound < in.Policy.MaxReviewRounds &&
 		st.CumulativeCostUSD < in.Policy.CostCeilingUSD {
 
+		gotFeedback, coalesceFired, keepAliveFired := false, false, false
 		sel := workflow.NewSelector(ctx)
 
 		sel.AddReceive(reviewComment, func(c workflow.ReceiveChannel, _ bool) {
@@ -110,7 +116,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 				return
 			}
 			st.PendingInstructions = append(st.PendingInstructions, instructionFromComment(s.Author, s.Body))
-			arm()
+			gotFeedback = true
 		})
 		sel.AddReceive(reviewSubmitted, func(c workflow.ReceiveChannel, _ bool) {
 			var s ReviewSubmittedSignal
@@ -122,7 +128,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 			if s.State == "changes_requested" {
 				st.PendingInstructions = append(st.PendingInstructions,
 					instructionFromComment(s.Author, "Requested changes: "+s.Body))
-				arm()
+				gotFeedback = true
 			}
 		})
 		sel.AddReceive(ciStatus, func(c workflow.ReceiveChannel, _ bool) {
@@ -134,8 +140,14 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 			if s.Conclusion == "failure" && in.Policy.AutoFixCI {
 				st.PendingInstructions = append(st.PendingInstructions,
 					"CI failed. Inspect the failure and fix it: "+s.DetailsURL)
-				arm()
+				gotFeedback = true
 			}
+		})
+		sel.AddReceive(userMessage, func(c workflow.ReceiveChannel, _ bool) {
+			var s UserMessageSignal
+			c.Receive(ctx, &s)
+			st.PendingInstructions = append(st.PendingInstructions, s.Text)
+			gotFeedback = true
 		})
 		sel.AddReceive(prClosed, func(c workflow.ReceiveChannel, _ bool) {
 			var s PRClosedSignal
@@ -145,42 +157,57 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 			}
 			closed, merged = true, s.Merged // merged vs abandoned discriminator (§6.2)
 		})
-		sel.AddReceive(userMessage, func(c workflow.ReceiveChannel, _ bool) {
-			var s UserMessageSignal
-			c.Receive(ctx, &s)
-			if st.VMState == vmRunning {
-				deliver(ctx, in, st, supervisor.CommandUserMessage, s.Text, "")
-			} else {
-				st.PendingInstructions = append(st.PendingInstructions, s.Text)
-				arm()
-			}
-		})
 		sel.AddReceive(abort, func(c workflow.ReceiveChannel, _ bool) {
 			var s AbortSignal
 			c.Receive(ctx, &s)
 			aborted, abortReason = true, s.Reason
 		})
-		sel.AddFuture(ttl, func(workflow.Future) {
-			aborted, abortReason = true, "hard_ttl"
-		})
-		if debounce != nil {
-			sel.AddFuture(debounce, func(workflow.Future) { debounce = nil })
+		sel.AddFuture(ttl, func(workflow.Future) { aborted, abortReason = true, "hard_ttl" })
+		if coalesce != nil {
+			sel.AddFuture(coalesce, func(workflow.Future) { coalesceFired = true })
+		}
+		if keepAlive != nil {
+			sel.AddFuture(keepAlive, func(workflow.Future) { keepAliveFired = true })
 		}
 
 		sel.Select(ctx)
 
-		// A fired debounce with pending work → run one resume round batching all of it.
-		if debounce == nil && len(st.PendingInstructions) > 0 && !closed && !aborted {
-			instructions := st.PendingInstructions
-			st.PendingInstructions = nil
-			st.ReviewRound++
-			log.Info("resume round", "round", st.ReviewRound, "instructions", len(instructions))
-			slackNote(ctx, st, fmt.Sprintf(":arrows_counterclockwise: *Review round %d* — addressing %d item(s).",
-				st.ReviewRound, len(instructions)))
-			r := runPhase(ctx, in, st, supervisor.ModeResume, instructions)
-			recordOutcome(ctx, st, in, r)
-			reportPhase(ctx, st, r)
-			st.Phase = "awaiting_review"
+		// First feedback of a batch: ack instantly and open the short coalescing window.
+		if gotFeedback && coalesce == nil && !closed && !aborted {
+			ackFeedback(ctx, st)
+			coalesce = workflow.NewTimer(ctx, in.Policy.ReviewDebounce)
+		}
+
+		// Coalescing window closed: one turn addresses everything batched — delivered to the
+		// warm VM, or a cold resume if it had parked.
+		if coalesceFired {
+			coalesce = nil
+			if len(st.PendingInstructions) > 0 && !closed && !aborted {
+				instructions := st.PendingInstructions
+				st.PendingInstructions = nil
+				st.ReviewRound++
+				log.Info("review round", "round", st.ReviewRound, "items", len(instructions),
+					"warm", st.VMState == vmRunning)
+				var r PhaseResult
+				if st.VMState == vmRunning {
+					r = warmTurn(ctx, in, st, instructions)
+				} else {
+					r = launchWarm(ctx, in, st, supervisor.ModeResume, instructions)
+				}
+				recordOutcome(ctx, st, in, r)
+				reportPhase(ctx, st, r)
+				st.Phase = "awaiting_review"
+				armKeepAlive()
+			}
+		}
+
+		// Idle too long: park the warm VM. A later reply cold-resumes it.
+		if keepAliveFired {
+			keepAlive = nil
+			if st.VMState == vmRunning && len(st.PendingInstructions) == 0 {
+				teardownVM(ctx, st)
+				slackNote(ctx, st, ":zzz: Parked — reply anytime and I'll spin back up.")
+			}
 		}
 	}
 
@@ -293,8 +320,9 @@ func shortSHA(s string) string {
 	return s
 }
 
-// runPhase does mint → launch → run → destroy-vm(keep workspace) for one mode.
-func runPhase(ctx workflow.Context, in WorkflowInput, st *State, mode string, instructions []string) PhaseResult {
+// launchWarm mints → launches (cold) → runs the first turn, and leaves the VM WARM (§6.1). The
+// guest stays up handling follow-ups until it idles out or the workflow tears it down.
+func launchWarm(ctx workflow.Context, in WorkflowInput, st *State, mode string, instructions []string) PhaseResult {
 	var a *Activities // nil receiver: used only for type-safe activity references
 
 	st.Phase = "minting:" + mode
@@ -312,15 +340,50 @@ func runPhase(ctx workflow.Context, in WorkflowInput, st *State, mode string, in
 	st.VMState = vmRunning
 
 	st.Phase = "running:" + mode
+	res := awaitTurn(ctx, in)
+	settle(ctx, st, res)
+	return res
+}
+
+// warmTurn delivers the batched messages to the already-running guest and awaits the resulting
+// turn — no relaunch, no checkout, no debounce (§6.1 keep-alive).
+func warmTurn(ctx workflow.Context, in WorkflowInput, st *State, texts []string) PhaseResult {
+	for _, t := range texts {
+		deliver(ctx, in, supervisor.CommandUserMessage, t, "")
+	}
+	st.Phase = "running:warm"
+	res := awaitTurn(ctx, in)
+	settle(ctx, st, res)
+	return res
+}
+
+// awaitTurn blocks on RunAgentPhase for one guest turn's terminal event.
+func awaitTurn(ctx workflow.Context, in WorkflowInput) PhaseResult {
+	var a *Activities
 	var res PhaseResult
 	if err := workflow.ExecuteActivity(phaseCtx(ctx), a.RunAgentPhase, in.SessionID).Get(ctx, &res); err != nil {
-		res = PhaseResult{Outcome: supervisor.EventAgentFailed, Stage: "run", Error: err.Error()}
+		return PhaseResult{Outcome: supervisor.EventAgentFailed, Stage: "run", Error: err.Error()}
 	}
-
-	st.Phase = "destroying:" + mode
-	_ = workflow.ExecuteActivity(destroyCtx(ctx), a.DestroyVM, DestroyParams{SessionID: in.SessionID}).Get(ctx, nil)
-	st.VMState = vmDestroyed
 	return res
+}
+
+// settle records the VM's warmth after a turn: still warm after a push/PR, torn down otherwise
+// (a failed or lost guest leaves nothing to talk to).
+func settle(ctx workflow.Context, st *State, res PhaseResult) {
+	switch res.Outcome {
+	case supervisor.EventPROpened, supervisor.EventPushDone:
+		st.VMState = vmRunning
+	default:
+		teardownVM(ctx, st)
+	}
+}
+
+// teardownVM stops the microVM but keeps the workspace, so the session can be resumed cold.
+func teardownVM(ctx workflow.Context, st *State) {
+	var a *Activities
+	_ = workflow.ExecuteActivity(destroyCtx(ctx), a.DestroyVM,
+		DestroyParams{SessionID: st.SessionID}).Get(ctx, nil)
+	st.VMState = vmDestroyed
 }
 
 // destroyWorkspace discards the persistent volume at end-of-life (§7.6).
@@ -331,11 +394,20 @@ func destroyWorkspace(ctx workflow.Context, st *State) {
 	st.VMState = vmDestroyed
 }
 
-func deliver(ctx workflow.Context, in WorkflowInput, st *State, typ, text, reason string) {
+func deliver(ctx workflow.Context, in WorkflowInput, typ, text, reason string) {
 	var a *Activities
 	_ = workflow.ExecuteActivity(deliverCtx(ctx), a.DeliverMessage,
 		DeliverParams{SessionID: in.SessionID, Type: typ, Text: text, Reason: reason}).Get(ctx, nil)
-	_ = st
+}
+
+// ackFeedback posts the instant, state-aware "I heard you" so a spin-up delay never looks like
+// silence (§6.4).
+func ackFeedback(ctx workflow.Context, st *State) {
+	if st.VMState == vmRunning {
+		slackNote(ctx, st, ":eyes: On it…")
+	} else {
+		slackNote(ctx, st, ":arrows_counterclockwise: Picking this back up — spinning a session up (~1 min)…")
+	}
 }
 
 // recordOutcome folds a phase result into workflow state and search attributes.

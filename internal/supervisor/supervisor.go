@@ -13,6 +13,10 @@ import (
 const (
 	workspaceDevice   = "/dev/vdb"
 	heartbeatInterval = 30 * time.Second
+	// keepAliveWindow is the guest-side idle backstop: how long the VM stays warm waiting for a
+	// follow-up message before parking itself. The control plane normally tears the VM down
+	// sooner (its keep-alive timer is shorter), so this only fires if the control plane is gone.
+	keepAliveWindow = 6 * time.Minute
 )
 
 // Deps are the injected collaborators, so orchestration is unit-testable with fakes.
@@ -36,6 +40,7 @@ type Supervisor struct {
 	git          *Git
 	queue        *Queue
 	home         string
+	keepAlive    time.Duration // idle backstop before the warm VM parks itself
 }
 
 // New builds a Supervisor rooted at workspaceDir (the mount point of the persistent volume).
@@ -58,17 +63,20 @@ func New(cfg BootConfig, deps Deps, workspaceDir string) *Supervisor {
 		git:          NewGit(deps.Runner, cfg, repoDir, fleetDir),
 		queue:        NewQueue(filepath.Join(fleetDir, "steering-queue.jsonl")),
 		home:         home,
+		keepAlive:    keepAliveWindow,
 	}
 }
 
-// Run executes the lifecycle. It publishes exactly one terminal event (pr_opened, push_done,
-// or agent_failed) so the workflow always learns the outcome.
+// Run executes the lifecycle: one turn per round, staying warm between rounds so a follow-up
+// message is handled without a cold relaunch (§6.1 keep-alive, §8.3). It publishes one event
+// per turn (pr_opened / push_done / agent_failed) and a session_idle event when it parks.
 func (s *Supervisor) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	wake := make(chan struct{}, 1)
 	s.startHeartbeat(ctx)
-	s.subscribeCommands(cancel)
+	s.subscribeCommands(cancel, wake)
 
 	if err := s.deps.Platform.MountWorkspace(workspaceDevice, s.workspaceDir); err != nil {
 		return s.failf(err, "mount_workspace")
@@ -83,58 +91,101 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		return s.failf(err, "git_prepare")
 	}
 
-	res, err := s.runAgent(ctx)
-	if err != nil {
-		return s.failf(err, "agent")
+	// First turn: initial (opens the PR) or a cold resume (pushes), per the launch mode.
+	if err := s.turn(ctx, s.firstTurnSpec(), s.cfg.Task.Mode == ModeInitial); err != nil {
+		return err // failf already published agent_failed
 	}
-	s.persistClaudeSession(res.SessionID)
 
-	return s.finalize(ctx, res)
+	// Keep-alive loop: stay warm and handle delivered messages turn-by-turn until the session
+	// idles out or is aborted. The control plane tears the VM down sooner (on merge, its own
+	// keep-alive timer, or abort); this idle backstop only fires if the control plane is gone.
+	idle := time.NewTimer(s.keepAlive)
+	defer idle.Stop()
+	for {
+		select {
+		case <-ctx.Done(): // abort
+			return nil
+		case <-idle.C:
+			_ = s.deps.Bus.Event(Event{Type: EventSessionIdle})
+			s.deps.Log.Info("session idle — parking")
+			return nil
+		case <-wake:
+			if !idle.Stop() {
+				select {
+				case <-idle.C:
+				default:
+				}
+			}
+			queued, err := s.queue.Drain()
+			if err != nil {
+				return s.failf(err, "queue_drain")
+			}
+			if len(queued) > 0 {
+				if err := s.turn(ctx, s.resumeSpec(nil, queued), false); err != nil {
+					return err
+				}
+			}
+			idle.Reset(s.keepAlive)
+		}
+	}
 }
 
-// runAgent builds the prompt for the mode and runs Claude Code, streaming to NATS.
-func (s *Supervisor) runAgent(ctx context.Context) (Result, error) {
-	spec := AgentSpec{
-		WorkDir:   s.repoDir,
-		Model:     s.cfg.Claude.Model,
-		BaseURL:   s.cfg.LLM.BaseURL,
-		AuthToken: s.cfg.LLM.AuthToken,
-	}
-	if s.cfg.Task.Mode == ModeResume {
-		queued, err := s.queue.Drain()
-		if err != nil {
-			return Result{}, err
-		}
-		spec.Prompt = resumePrompt(s.cfg.Task.Instructions, queued)
-		spec.Resume = true
-		spec.ClaudeSessionID = s.readClaudeSession()
-	} else {
-		spec.Prompt = autonomousPreamble + s.cfg.Task.Prompt
-	}
-	return s.deps.Agent.Run(ctx, spec, func(line []byte) {
+// turn runs one agent turn and finalizes it (commit/push; open a PR only on the first initial
+// turn). A failure publishes agent_failed and ends the session.
+func (s *Supervisor) turn(ctx context.Context, spec AgentSpec, openPR bool) error {
+	res, err := s.deps.Agent.Run(ctx, spec, func(line []byte) {
 		if err := s.deps.Bus.Log(line); err != nil {
 			s.deps.Log.Warn("publish log line failed", "err", err)
 		}
 	})
+	if err != nil {
+		return s.failf(err, "agent")
+	}
+	s.persistClaudeSession(res.SessionID)
+	return s.finalizeTurn(ctx, res, openPR)
 }
 
-// finalize commits, pushes, and reports the outcome.
-func (s *Supervisor) finalize(ctx context.Context, res Result) error {
+// firstTurnSpec builds the first turn's spec from the launch mode.
+func (s *Supervisor) firstTurnSpec() AgentSpec {
+	if s.cfg.Task.Mode == ModeResume {
+		queued, _ := s.queue.Drain()
+		return s.resumeSpec(s.cfg.Task.Instructions, queued)
+	}
+	return AgentSpec{
+		WorkDir: s.repoDir, Model: s.cfg.Claude.Model,
+		BaseURL: s.cfg.LLM.BaseURL, AuthToken: s.cfg.LLM.AuthToken,
+		Prompt: autonomousPreamble + s.cfg.Task.Prompt,
+	}
+}
+
+// resumeSpec builds a --resume spec that continues the same Claude Code session.
+func (s *Supervisor) resumeSpec(instructions, queued []string) AgentSpec {
+	return AgentSpec{
+		WorkDir: s.repoDir, Model: s.cfg.Claude.Model,
+		BaseURL: s.cfg.LLM.BaseURL, AuthToken: s.cfg.LLM.AuthToken,
+		Prompt: resumePrompt(instructions, queued), Resume: true,
+		ClaudeSessionID: s.readClaudeSession(),
+	}
+}
+
+// finalizeTurn commits, pushes, and reports the turn. openPR opens the PR (first initial turn);
+// otherwise it is a push to the existing branch.
+func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool) error {
 	sha, changed, err := s.git.Commit(ctx, s.commitMessage())
 	if err != nil {
 		return s.failf(err, "git_commit")
 	}
+	tokens := res.Usage.InputTokens + res.Usage.OutputTokens
 	if !changed {
-		// A no-op run is a legitimate outcome, not a crash (§13).
+		// A no-op turn is a legitimate outcome, not a crash (§13).
 		s.deps.Log.Info("agent produced no changes")
 		return s.deps.Bus.Event(Event{Type: EventPushDone, Stage: "no_changes",
-			CostUSD: res.TotalCostUSD, Tokens: res.Usage.InputTokens + res.Usage.OutputTokens})
+			CostUSD: res.TotalCostUSD, Tokens: tokens})
 	}
 	if err := s.git.Push(ctx); err != nil {
 		return s.failf(err, "git_push")
 	}
-	tokens := res.Usage.InputTokens + res.Usage.OutputTokens
-	if s.cfg.Task.Mode == ModeInitial {
+	if openPR {
 		number, url, err := s.git.OpenPR(ctx, s.prTitle(), s.prBody(res))
 		if err != nil {
 			return s.failf(err, "open_pr")
@@ -171,14 +222,19 @@ func (s *Supervisor) startHeartbeat(ctx context.Context) {
 	}()
 }
 
-// subscribeCommands queues user_message for the next round and cancels the run on abort
-// (§8.3). `claude -p` is not interactive, so a message cannot be injected mid-turn.
-func (s *Supervisor) subscribeCommands(cancel context.CancelFunc) {
+// subscribeCommands queues user_message and wakes the keep-alive loop to handle it at the next
+// turn boundary; abort cancels the run (§8.3). `claude -p` is not interactive, so a message
+// cannot be injected mid-turn — messages that arrive during a turn are handled together next.
+func (s *Supervisor) subscribeCommands(cancel context.CancelFunc, wake chan<- struct{}) {
 	err := s.deps.Bus.OnCommand(func(c Command) {
 		switch c.Type {
 		case CommandUserMessage:
 			if err := s.queue.Append(c.Text); err != nil {
 				s.deps.Log.Warn("queue user_message failed", "err", err)
+			}
+			select {
+			case wake <- struct{}{}: // non-blocking: coalesces a burst into one wake
+			default:
 			}
 		case CommandAbort:
 			s.deps.Log.Warn("abort received", "reason", c.Reason)

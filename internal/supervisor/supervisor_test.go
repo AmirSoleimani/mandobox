@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestSupervisor(t *testing.T, cfg BootConfig) (*Supervisor, *fakeTransport, *fakeRunner, *fakeAgent) {
@@ -23,6 +24,8 @@ func newTestSupervisor(t *testing.T, cfg BootConfig) (*Supervisor, *fakeTranspor
 	sup := New(cfg, Deps{Bus: NewBus(ft, cfg.SessionID), Runner: fr, Agent: fa, Platform: &fakePlatform{}}, ws)
 	sup.home = home
 	sup.git.tokenPath = filepath.Join(runDir, "token")
+	// Park almost immediately after the turn so Run() returns without a live control plane.
+	sup.keepAlive = 5 * time.Millisecond
 	return sup, ft, fr, fa
 }
 
@@ -35,13 +38,20 @@ func mustCfg(t *testing.T, body string) BootConfig {
 	return c
 }
 
+// singleEvent returns the single turn event, ignoring the trailing session_idle the keep-alive
+// loop publishes when it parks.
 func singleEvent(t *testing.T, ft *fakeTransport) Event {
 	t.Helper()
-	evs := ft.events()
-	if len(evs) != 1 {
-		t.Fatalf("want exactly 1 event, got %d: %+v", len(evs), evs)
+	var turns []Event
+	for _, ev := range ft.events() {
+		if ev.Type != EventSessionIdle {
+			turns = append(turns, ev)
+		}
 	}
-	return evs[0]
+	if len(turns) != 1 {
+		t.Fatalf("want exactly 1 turn event, got %d: %+v", len(turns), turns)
+	}
+	return turns[0]
 }
 
 func TestRunInitialOpensPR(t *testing.T) {

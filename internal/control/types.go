@@ -49,7 +49,12 @@ func (p Policy) withDefaults() Policy {
 		p.HardTTL = 24 * time.Hour // D2: 24h while iterating, not 14d.
 	}
 	if p.ReviewDebounce == 0 {
-		p.ReviewDebounce = 90 * time.Second // §6.2: batch a burst of comments.
+		// A short coalescing window, not the old 90s debounce: with a warm VM we deliver almost
+		// immediately, only batching a rapid-fire burst into one turn (§6.1 keep-alive).
+		p.ReviewDebounce = 5 * time.Second
+	}
+	if p.KeepAlive == 0 {
+		p.KeepAlive = 5 * time.Minute // how long the VM stays warm awaiting the next message.
 	}
 	return p
 }

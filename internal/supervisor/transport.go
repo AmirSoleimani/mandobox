@@ -69,6 +69,7 @@ const (
 	EventPushDone    = "push_done"
 	EventAgentFailed = "agent_failed"
 	EventNeedsInput  = "needs_input"
+	EventSessionIdle = "session_idle" // the warm VM idled out and is powering off (§6.1 keep-alive)
 )
 
 // Event is a guest→control-plane state transition.
