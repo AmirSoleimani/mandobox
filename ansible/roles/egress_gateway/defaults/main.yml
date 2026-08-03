@@ -3,11 +3,16 @@ egress_gateway_dist_dir: "{{ playbook_dir }}/../bin"
 egress_gateway_bin: /usr/local/bin/fleet-gateway
 egress_gateway_conf_dir: /etc/fleet/gateway
 
-# The real Anthropic key (Tier-0, §9) — never in a guest. Ship it from a local, gitignored
-# file. Override to point at your secret store.
-egress_gateway_key_src: "{{ playbook_dir }}/../secrets/anthropic.key"
+# The upstream credential the gateway injects (Tier-0, §9) — never in a guest. Since M5 the
+# upstream is LiteLLM, so this is the LiteLLM master key; the real Anthropic key lives only in
+# the litellm role. Ship it from a local, gitignored file.
+egress_gateway_key_src: "{{ playbook_dir }}/../secrets/litellm-master-key"
+egress_gateway_key_file: "{{ egress_gateway_conf_dir }}/upstream.key"
+# LiteLLM's unambiguous proxy-auth header (§10). Use "X-Api-Key" to talk to Anthropic directly.
+egress_gateway_key_header: "x-litellm-api-key"
 
-egress_gateway_upstream: "https://api.anthropic.com"
+# LiteLLM proxy (model routing) — localhost. Set to https://api.anthropic.com to bypass routing.
+egress_gateway_upstream: "http://127.0.0.1:4000"
 # Bind the host service anchor so guests reach it, and it is never on the public interface.
 egress_gateway_listen: "{{ fleet_host_gw_addr }}:{{ fleet_egress_proxy_port }}"
 

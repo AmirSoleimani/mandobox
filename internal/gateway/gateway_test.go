@@ -17,7 +17,7 @@ func TestAnthropicProxyInjectsKeyAndStripsSession(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	g, err := New(Config{UpstreamBaseURL: upstream.URL, AnthropicKey: "real-key-123"})
+	g, err := New(Config{UpstreamBaseURL: upstream.URL, UpstreamKey: "real-key-123"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,8 +42,39 @@ func TestAnthropicProxyInjectsKeyAndStripsSession(t *testing.T) {
 	}
 }
 
+func TestUpstreamKeyHeaderIsConfigurable(t *testing.T) {
+	var gotLiteLLM, gotXApiKey string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotLiteLLM = r.Header.Get("x-litellm-api-key")
+		gotXApiKey = r.Header.Get("X-Api-Key")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	g, err := New(Config{UpstreamBaseURL: upstream.URL, UpstreamKey: "sk-litellm", UpstreamKeyHeader: "x-litellm-api-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	front := httptest.NewServer(g)
+	defer front.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, front.URL+"/v1/messages", strings.NewReader(`{}`))
+	req.Header.Set("X-Api-Key", "sess-token") // guest session token — must be stripped
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if gotLiteLLM != "sk-litellm" {
+		t.Errorf("x-litellm-api-key = %q, want the LiteLLM key injected", gotLiteLLM)
+	}
+	if gotXApiKey != "" {
+		t.Errorf("guest X-Api-Key leaked upstream: %q", gotXApiKey)
+	}
+}
+
 func TestAnthropicProxyRequiresToken(t *testing.T) {
-	g, _ := New(Config{UpstreamBaseURL: "https://api.anthropic.com", AnthropicKey: "k"})
+	g, _ := New(Config{UpstreamBaseURL: "https://api.anthropic.com", UpstreamKey: "k"})
 	rr := httptest.NewRecorder()
 	g.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/messages", nil))
 	if rr.Code != http.StatusUnauthorized {
@@ -58,7 +89,7 @@ func TestScrubResponseRedactsKey(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	g, _ := New(Config{UpstreamBaseURL: upstream.URL, AnthropicKey: "real-key-123"})
+	g, _ := New(Config{UpstreamBaseURL: upstream.URL, UpstreamKey: "real-key-123"})
 	front := httptest.NewServer(g)
 	defer front.Close()
 
@@ -77,7 +108,7 @@ func TestScrubResponseRedactsKey(t *testing.T) {
 
 func TestAllowlist(t *testing.T) {
 	g, _ := New(Config{
-		UpstreamBaseURL: "https://api.anthropic.com", AnthropicKey: "k",
+		UpstreamBaseURL: "https://api.anthropic.com", UpstreamKey: "k",
 		Allowlist: []string{"github.com", ".githubusercontent.com"},
 	})
 	cases := map[string]bool{
@@ -95,7 +126,7 @@ func TestAllowlist(t *testing.T) {
 }
 
 func TestConnectDenied(t *testing.T) {
-	g, _ := New(Config{UpstreamBaseURL: "https://api.anthropic.com", AnthropicKey: "k",
+	g, _ := New(Config{UpstreamBaseURL: "https://api.anthropic.com", UpstreamKey: "k",
 		Allowlist: []string{"github.com"}})
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodConnect, "http://evil.com:443", nil)

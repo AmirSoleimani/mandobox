@@ -13,6 +13,8 @@
   roles:
     - role: fleet_agent
       tags: [fleet_agent]
+    - role: litellm
+      tags: [litellm]
     - role: egress_gateway
       tags: [egress_gateway]
     - role: nats

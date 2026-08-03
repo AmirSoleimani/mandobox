@@ -1,0 +1,9 @@
+---
+- name: Reload systemd daemon (litellm)
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart litellm
+  ansible.builtin.systemd_service:
+    name: litellm
+    state: restarted

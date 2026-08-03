@@ -1,0 +1,13 @@
+{{ '#' }} {{ ansible_managed }}
+{{ '#' }} Static model_list — no database. The guest's claude --model sends the alias
+{{ '#' }} (model_name); LiteLLM routes it to the provider model and injects the real key.
+model_list:
+{% for m in litellm_models %}
+  - model_name: {{ m.alias }}
+    litellm_params:
+      model: {{ m.model }}
+      api_key: os.environ/ANTHROPIC_API_KEY
+{% endfor %}
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

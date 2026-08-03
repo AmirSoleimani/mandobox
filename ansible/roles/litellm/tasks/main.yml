@@ -1,0 +1,86 @@
+---
+- name: Install Python venv tooling
+  ansible.builtin.apt:
+    name:
+      - python3-venv
+      - python3-pip
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the litellm system user
+  ansible.builtin.user:
+    name: "{{ litellm_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create litellm directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ litellm_user }}"
+    group: "{{ litellm_user }}"
+    mode: "0755"
+  loop:
+    - /opt/litellm
+    - "{{ litellm_conf_dir }}"
+
+- name: Create the litellm virtualenv
+  ansible.builtin.command:
+    cmd: python3 -m venv {{ litellm_venv }}
+    creates: "{{ litellm_venv }}/bin/python"
+  become_user: "{{ litellm_user }}"
+
+- name: Install litellm[proxy] into the venv
+  ansible.builtin.pip:
+    name: "litellm[proxy]{{ ('==' + litellm_version) if litellm_version else '' }}"
+    state: "{{ 'present' if litellm_version else 'latest' }}"
+    virtualenv: "{{ litellm_venv }}"
+  become_user: "{{ litellm_user }}"
+  notify: Restart litellm
+
+- name: Install the litellm config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ litellm_conf_dir }}/config.yaml"
+    owner: "{{ litellm_user }}"
+    group: "{{ litellm_user }}"
+    mode: "0644"
+  notify: Restart litellm
+
+- name: Install the litellm secrets env (Tier-0)
+  ansible.builtin.template:
+    src: litellm.env.j2
+    dest: "{{ litellm_conf_dir }}/litellm.env"
+    owner: "{{ litellm_user }}"
+    group: "{{ litellm_user }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart litellm
+
+- name: Install the litellm systemd unit
+  ansible.builtin.template:
+    src: litellm.service.j2
+    dest: /etc/systemd/system/litellm.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd daemon (litellm)
+    - Restart litellm
+
+- name: Apply unit changes before enabling
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start litellm
+  ansible.builtin.systemd_service:
+    name: litellm
+    enabled: true
+    state: started
+
+- name: Wait for the litellm proxy to accept connections
+  ansible.builtin.wait_for:
+    host: "{{ litellm_host }}"
+    port: "{{ litellm_port }}"
+    timeout: 90

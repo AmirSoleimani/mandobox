@@ -26,8 +26,9 @@ func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	listen := flag.String("listen", envOr("FLEET_GW_LISTEN", "172.31.0.1:8080"), "listen address (host anchor)")
-	upstream := flag.String("upstream", envOr("FLEET_GW_UPSTREAM", "https://api.anthropic.com"), "Anthropic API base")
-	keyFile := flag.String("key-file", envOr("FLEET_GW_KEY_FILE", "/etc/fleet/gateway/anthropic.key"), "file with the real Anthropic key")
+	upstream := flag.String("upstream", envOr("FLEET_GW_UPSTREAM", "https://api.anthropic.com"), "LLM upstream base (LiteLLM or Anthropic)")
+	keyFile := flag.String("key-file", envOr("FLEET_GW_KEY_FILE", "/etc/fleet/gateway/anthropic.key"), "file with the upstream key (LiteLLM master key or Anthropic key)")
+	keyHeader := flag.String("key-header", envOr("FLEET_GW_KEY_HEADER", "X-Api-Key"), "header to inject the upstream key under (x-litellm-api-key for LiteLLM)")
 	allowFile := flag.String("allowlist-file", envOr("FLEET_GW_ALLOWLIST", ""), "optional file, one host per line; defaults to the built-in list")
 	flag.Parse()
 
@@ -46,10 +47,11 @@ func main() {
 	}
 
 	g, err := gateway.New(gateway.Config{
-		UpstreamBaseURL: *upstream,
-		AnthropicKey:    strings.TrimSpace(string(keyBytes)),
-		Allowlist:       allow,
-		Log:             log,
+		UpstreamBaseURL:   *upstream,
+		UpstreamKey:       strings.TrimSpace(string(keyBytes)),
+		UpstreamKeyHeader: *keyHeader,
+		Allowlist:         allow,
+		Log:               log,
 	})
 	if err != nil {
 		log.Error("build gateway", "err", err)

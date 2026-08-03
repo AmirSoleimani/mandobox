@@ -70,7 +70,7 @@ func main() {
 		namespace:  env("TEMPORAL_NAMESPACE", "fleet"),
 		imageSHA:   os.Getenv("IMAGE_SHA"),
 		shaFile:    env("FLEET_IMAGE_SHA_FILE", "/var/lib/fleet/images/current.sha"),
-		model:      env("CLAUDE_MODEL", "claude-sonnet-5"),
+		model:      env("CLAUDE_MODEL", "default"), // LiteLLM routing alias (§10)
 		baseBranch: env("BASE_BRANCH", "main"),
 	}
 	if auth, err := api.AuthTest(); err == nil {
@@ -110,13 +110,18 @@ func (g *gateway) loop(sm *socketmode.Client) {
 // handleSlash dispatches "/fleet <owner/repo> <prompt>" as a new PRWorkflow.
 func (g *gateway) handleSlash(cmd slack.SlashCommand) string {
 	text := strings.TrimSpace(cmd.Text)
+	// Optional leading --cheap routes to the cheap model class (§10).
+	model := g.model
+	if rest, found := strings.CutPrefix(text, "--cheap "); found {
+		model, text = "cheap", strings.TrimSpace(rest)
+	}
 	repo, prompt, ok := strings.Cut(text, " ")
 	if !ok || !strings.Contains(repo, "/") {
-		return "usage: `/fleet <owner/repo> <prompt>`"
+		return "usage: `/fleet [--cheap] <owner/repo> <prompt>`"
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		return "usage: `/fleet <owner/repo> <prompt>` — the prompt is empty"
+		return "usage: `/fleet [--cheap] <owner/repo> <prompt>` — the prompt is empty"
 	}
 	imageSHA := g.resolveImageSHA()
 	if imageSHA == "" {
@@ -133,7 +138,7 @@ func (g *gateway) handleSlash(cmd slack.SlashCommand) string {
 		BaseBranch:   g.baseBranch,
 		Prompt:       prompt,
 		ImageSHA:     imageSHA,
-		Model:        g.model,
+		Model:        model,
 		VCPUs:        2,
 		MemMiB:       4096,
 		SlackChannel: cmd.ChannelID,
