@@ -76,13 +76,19 @@ for vmdir in "${STATE_DIR}"/*/; do
     continue
   fi
 
-  # Guard against PID reuse: only ever kill an actual Firecracker process.
+  # Guard against PID reuse: only ever act on an actual Firecracker process. /proc/<pid>/comm is
+  # truncated to 15 chars, so the versioned binary (firecracker-v1.16.1-x86_64) shows as
+  # "firecracker-v1." — prefix-match, or a live VM is mistaken for a reused pid and its tap/state
+  # get stripped out from under it (severing its network → false "dead").
   comm="$(cat "/proc/${pid}/comm" 2>/dev/null || true)"
-  if [ "${comm}" != "firecracker" ]; then
+  case "${comm}" in
+  firecracker*) ;;
+  *)
     log "pid ${pid} for ${sid} is '${comm}', not firecracker — dropping stale state"
     remove_vm "${vmdir}"
     continue
-  fi
+    ;;
+  esac
 
   reason=""
 
