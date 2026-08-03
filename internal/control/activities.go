@@ -182,7 +182,8 @@ func (a *Activities) RunAgentPhase(ctx context.Context, sessionID string) (Phase
 func terminalFromEvent(ev supervisor.Event) (PhaseResult, bool) {
 	res := PhaseResult{
 		Outcome: ev.Type, PRNumber: ev.PRNumber, PRURL: ev.PRURL, CommitSHA: ev.CommitSHA,
-		Stage: ev.Stage, Error: ev.Error, Question: ev.Question, CostUSD: ev.CostUSD, Tokens: ev.Tokens,
+		Stage: ev.Stage, Error: ev.Error, Question: ev.Question, Reply: ev.Reply,
+		CostUSD: ev.CostUSD, Tokens: ev.Tokens,
 	}
 	switch ev.Type {
 	case supervisor.EventPROpened, supervisor.EventPushDone, supervisor.EventAgentFailed, supervisor.EventNeedsInput:

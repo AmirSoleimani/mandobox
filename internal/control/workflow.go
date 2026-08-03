@@ -253,18 +253,35 @@ func slackNote(ctx workflow.Context, st *State, text string) {
 		PostSlackParams{Channel: st.SlackChannel, ThreadTS: st.SlackThreadTS, Text: text}).Get(ctx, nil)
 }
 
+// reportPhase renders a turn as conversation: the agent's own words, plus a small footer noting
+// a PR/push when it actually changed code (§6.4). This is what makes a reply feel answered — a
+// question gets an explanation, a change gets a summary — rather than a bare "no changes".
 func reportPhase(ctx workflow.Context, st *State, res PhaseResult) {
+	reply := strings.TrimSpace(res.Reply)
 	switch res.Outcome {
 	case supervisor.EventPROpened:
-		slackNote(ctx, st, fmt.Sprintf(":tada: *PR opened* <%s|#%d>  (cost $%.4f · %d tokens)",
-			res.PRURL, res.PRNumber, res.CostUSD, res.Tokens))
-	case supervisor.EventPushDone:
-		if res.Stage == "no_changes" {
-			slackNote(ctx, st, ":information_source: Agent produced no changes this round.")
-		} else {
-			slackNote(ctx, st, fmt.Sprintf(":arrow_up: Pushed `%s`  (cost $%.4f · %d tokens)",
-				shortSHA(res.CommitSHA), res.CostUSD, res.Tokens))
+		msg := fmt.Sprintf(":tada: *PR opened* <%s|#%d>", res.PRURL, res.PRNumber)
+		if reply != "" {
+			msg += "\n" + truncate(reply, 1500)
 		}
+		msg += fmt.Sprintf("\n_$%.4f · %d tokens_", res.CostUSD, res.Tokens)
+		slackNote(ctx, st, msg)
+	case supervisor.EventPushDone:
+		msg := ":speech_balloon: "
+		if reply != "" {
+			msg += truncate(reply, 1500)
+		} else if res.Stage == "no_changes" {
+			msg += "_(no changes)_"
+		} else {
+			msg += "_(done)_"
+		}
+		if res.Stage != "no_changes" && res.CommitSHA != "" {
+			msg += fmt.Sprintf("\n:arrow_up: pushed `%s` · _$%.4f · %d tokens_",
+				shortSHA(res.CommitSHA), res.CostUSD, res.Tokens)
+		} else {
+			msg += fmt.Sprintf("\n_$%.4f · %d tokens_", res.CostUSD, res.Tokens)
+		}
+		slackNote(ctx, st, msg)
 	case supervisor.EventAgentFailed:
 		slackNote(ctx, st, fmt.Sprintf(":x: Run failed at *%s*: %s", res.Stage, res.Error))
 	case supervisor.EventNeedsInput:
@@ -402,11 +419,13 @@ func deliver(ctx workflow.Context, in WorkflowInput, typ, text, reason string) {
 
 // ackFeedback posts the instant, state-aware "I heard you" so a spin-up delay never looks like
 // silence (§6.4).
+// ackFeedback is the neutral "I heard you" — it doesn't presume a code change (the reply may
+// just be a question); the agent's actual response follows.
 func ackFeedback(ctx workflow.Context, st *State) {
 	if st.VMState == vmRunning {
-		slackNote(ctx, st, ":eyes: On it…")
+		slackNote(ctx, st, ":thought_balloon: Looking…")
 	} else {
-		slackNote(ctx, st, ":arrows_counterclockwise: Picking this back up — spinning a session up (~1 min)…")
+		slackNote(ctx, st, ":thought_balloon: Looking… _(spinning a session up, ~1 min)_")
 	}
 }
 

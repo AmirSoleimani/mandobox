@@ -81,6 +81,7 @@ type Event struct {
 	Stage     string  `json:"stage,omitempty"`
 	Error     string  `json:"error,omitempty"`
 	Question  string  `json:"question,omitempty"`
+	Reply     string  `json:"reply,omitempty"` // the agent's own words this turn, for the thread
 	CostUSD   float64 `json:"cost_usd,omitempty"`
 	Tokens    int     `json:"tokens,omitempty"`
 }

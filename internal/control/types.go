@@ -54,7 +54,8 @@ func (p Policy) withDefaults() Policy {
 		p.ReviewDebounce = 5 * time.Second
 	}
 	if p.KeepAlive == 0 {
-		p.KeepAlive = 5 * time.Minute // how long the VM stays warm awaiting the next message.
+		// Generous warm window so an active back-and-forth stays warm (plan's keep_alive_threshold).
+		p.KeepAlive = 15 * time.Minute
 	}
 	return p
 }
@@ -178,6 +179,7 @@ type PhaseResult struct {
 	Stage     string  `json:"stage"`
 	Error     string  `json:"error"`
 	Question  string  `json:"question"`
+	Reply     string  `json:"reply"` // the agent's own words this turn, for the thread
 	CostUSD   float64 `json:"cost_usd"`
 	Tokens    int     `json:"tokens"`
 }
