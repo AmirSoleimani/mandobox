@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# fleet-reaper — host-side safety net that kills Firecracker microVMs which have
+# mando-reaper — host-side safety net that kills Firecracker microVMs which have
 # exceeded their absolute lifetime or gone silent, and cleans up after VMs that died on
 # their own. PLAN §7.6, invariant I8.
 #
 # It NEVER touches workspace volumes — a reaped VM's PR may still be open; only the
 # transient run-state dir under FLEET_VM_STATE_DIR and the VM's tap device are removed.
 #
-# Per-VM state (written by fleet-agent) lives at $FLEET_VM_STATE_DIR/<session_id>/:
+# Per-VM state (written by mando-agent) lives at $FLEET_VM_STATE_DIR/<session_id>/:
 #   vm.json          full record (includes the tap name)
 #   firecracker.pid  pid of the Firecracker process
 #   started_at       epoch seconds of launch (else ps elapsed time is used)
@@ -21,7 +21,7 @@ HEARTBEAT_TIMEOUT="${FLEET_HEARTBEAT_TIMEOUT:-600}"  # 10m
 TERM_GRACE="${FLEET_TERM_GRACE:-10}"
 ORPHAN_GRACE="${FLEET_ORPHAN_GRACE:-120}"            # min age before killing a state-less VM
 
-log() { echo "fleet-reaper: $*"; }
+log() { echo "mando-reaper: $*"; }
 
 # reap <pid> <session_id> <reason>
 reap() {
@@ -124,7 +124,7 @@ done
 # kill a process stuck in uninterruptible I/O. Nothing else catches a process with no state
 # dir — the main loop and the reconciler are both state-driven — so this is the last net.
 # Match on the stable api-sock marker (Firecracker's comm is truncated to "firecracker-v1.").
-# The ORPHAN_GRACE avoids the launch race: fleet-agent starts Firecracker before it persists
+# The ORPHAN_GRACE avoids the launch race: mando-agent starts Firecracker before it persists
 # the state dir, so a just-launched VM briefly has a live process and no dir.
 for pid in $(pgrep -f -- '--api-sock /firecracker.socket' 2>/dev/null || true); do
   cl="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
@@ -132,7 +132,7 @@ for pid in $(pgrep -f -- '--api-sock /firecracker.socket' 2>/dev/null || true); 
   jid="$(printf '%s' "${cl}" | grep -oE -- '--id [^ ]+' | awk '{print $2}')"
   [ -n "${jid}" ] || continue
   sid="s_${jid#s-}" # jailer id "s-XXXX" ← session id "s_XXXX" (jailer forbids underscores)
-  [ -d "${STATE_DIR}/${sid}" ] && continue # fleet-agent still tracks it — leave it
+  [ -d "${STATE_DIR}/${sid}" ] && continue # mando-agent still tracks it — leave it
   age="$(ps -o etimes= -p "${pid}" 2>/dev/null | tr -d ' ')"
   age="${age:-0}"
   [ "${age}" -lt "${ORPHAN_GRACE}" ] && continue # too young — may be mid-launch
@@ -143,7 +143,7 @@ for pid in $(pgrep -f -- '--api-sock /firecracker.socket' 2>/dev/null || true); 
   fi
 done
 
-# Sweep orphan jailer logs: fleet-agent captures jailer/firecracker output to a top-level
+# Sweep orphan jailer logs: mando-agent captures jailer/firecracker output to a top-level
 # jailer-<sid>.log (not inside the per-VM dir), so it outlives a removed VM. Drop any whose
 # session state dir is gone.
 for lf in "${STATE_DIR}"/jailer-*.log; do

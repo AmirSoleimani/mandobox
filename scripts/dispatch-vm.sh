@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# dispatch-vm.sh — hand-dispatch one agent VM by POSTing a launch to fleet-agent (M3).
+# dispatch-vm.sh — hand-dispatch one agent VM by POSTing a launch to mando-agent (M3).
 #
 # This is the manual stand-in for M4's Temporal workflow: it generates a session_id, builds
-# the MMDS payload, and calls fleet-agent over mTLS. fleet-agent adds the network block and
+# the MMDS payload, and calls mando-agent over mTLS. mando-agent adds the network block and
 # boots the VM; fc-supervisor runs Claude Code and opens the PR.
 #
 # The GitHub token must be a real installation token (contents:write + pull_requests:write,
@@ -28,8 +28,8 @@ GATEWAY_URL="${GATEWAY_URL:-http://172.31.0.1:8080}"
 VCPUS="${VCPUS:-2}"
 MEM_MIB="${MEM_MIB:-4096}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-5}"
-GITHUB_BOT_USER="${GITHUB_BOT_USER:-fleet-agent[bot]}"
-GITHUB_BOT_EMAIL="${GITHUB_BOT_EMAIL:-fleet-agent[bot]@users.noreply.github.com}"
+GITHUB_BOT_USER="${GITHUB_BOT_USER:-mando-agent[bot]}"
+GITHUB_BOT_EMAIL="${GITHUB_BOT_EMAIL:-mando-agent[bot]@users.noreply.github.com}"
 NATS_CREDS="${NATS_CREDS:-}" # empty for M3 no-auth NATS
 
 # Derive owner/name from the clone URL if not given.

@@ -1,0 +1,41 @@
+---
+# The mando-dashboard management console (a separate Go module). It runs on the fleet host and binds
+# to localhost only — access is over an SSH tunnel, so it carries no auth of its own. It reads
+# Temporal (sessions), reads/writes the box config, and drives update-tools.sh, so it runs as root.
+dashboard_dist_dir: "{{ playbook_dir }}/../bin"
+dashboard_bin: /usr/local/bin/mando-dashboard
+dashboard_conf_dir: /etc/fleet
+
+# Bind address — keep it on 127.0.0.1. Reach the UI with:
+#   ssh -L 8087:127.0.0.1:8087 root@<fleet-host>   then open http://localhost:8087
+dashboard_addr: "127.0.0.1:8087"
+
+# What it reads/manages — these match the other roles' defaults (control_plane, golden_image).
+dashboard_temporal_address: "127.0.0.1:7233"
+dashboard_temporal_namespace: fleet
+dashboard_config_path: /etc/fleet/mandobox.yml
+dashboard_tools_env: /usr/local/lib/fleet/tools.env
+dashboard_update_tools: /usr/local/lib/fleet/update-tools.sh
+dashboard_tool_audit: /var/lib/fleet/tool-updates.log
+dashboard_images_dir: /var/lib/fleet/images
+
+# VM reports read mando-agent's mTLS API with the reconciler client certs (installed by fleet_agent).
+dashboard_fleet_url: "https://127.0.0.1:9443"
+dashboard_tls_cert: /etc/fleet/tls/reconciler.crt
+dashboard_tls_key: /etc/fleet/tls/reconciler.key
+dashboard_tls_ca: /etc/fleet/tls/server-ca.crt
+
+# Secret-rotation audit trail (never records values, only fingerprints).
+dashboard_secret_audit: /var/lib/fleet/secret-rotations.log
+
+# Box-wide default agent instructions file (edited here, read by the worker per dispatch). Must match
+# control_plane_instructions_path so the dashboard writes what the worker reads.
+dashboard_instructions_path: /etc/fleet/agent-instructions.md
+
+# Agent preamble override files (edited here; the worker reads them per launch and writes the
+# built-in defaults to <path>.default for the dashboard). Must match the control_plane paths.
+dashboard_preamble_autonomous: /etc/fleet/preamble-autonomous.md
+dashboard_preamble_collaborate: /etc/fleet/preamble-collaborate.md
+
+# Archived guest agent-activity logs (nats-bridge writes <session>.log.jsonl here).
+dashboard_log_dir: /var/lib/fleet/logs

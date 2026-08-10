@@ -1,6 +1,6 @@
 ---
 egress_gateway_dist_dir: "{{ playbook_dir }}/../bin"
-egress_gateway_bin: /usr/local/bin/fleet-gateway
+egress_gateway_bin: /usr/local/bin/mando-gateway
 egress_gateway_conf_dir: /etc/fleet/gateway
 
 # The upstream credential the gateway injects (Tier-0, §9) — never in a guest. Since M5 the
@@ -16,6 +16,14 @@ egress_gateway_upstream: "http://127.0.0.1:4000"
 # Bind the host service anchor so guests reach it, and it is never on the public interface.
 egress_gateway_listen: "{{ fleet_host_gw_addr }}:{{ fleet_egress_proxy_port }}"
 
-# Optional custom CONNECT allowlist (one host per line). Empty → the binary's built-in list
-# (github.com, registries). Extend for your repos' registries (§7.5).
+# Egress policy (§4.5, §7.5):
+#   strict → default-deny; only the allowlist (built-in curated registries + egress_gateway_allowlist)
+#            may be reached. Best when running untrusted repos.
+#   open   → any host reachable, still logged through the gateway (the audited chokepoint stays).
+#            Best for your own trusted repos — zero registry maintenance, keeps exfil *detection*.
+# nftables forces all guest egress through the gateway in both modes.
+egress_gateway_mode: strict
+
+# Optional custom CONNECT allowlist (one host per line), ADDED to the binary's curated built-in
+# list when in strict mode. Empty → just the built-in list. Extend for private/niche registries.
 egress_gateway_allowlist: []

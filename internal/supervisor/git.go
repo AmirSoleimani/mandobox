@@ -81,14 +81,16 @@ func (g *Git) SetupCredentials(ctx context.Context) error {
 	}
 	name := g.cfg.GitHub.BotUser
 	if name == "" {
-		name = "fleet-agent[bot]"
+		name = "mando-agent[bot]"
 	}
 	email := g.cfg.GitHub.BotEmail
 	if email == "" {
-		email = "fleet-agent[bot]@users.noreply.github.com"
+		email = "mando-agent[bot]@users.noreply.github.com"
 	}
 	for _, kv := range [][2]string{
-		{"credential.helper", "!" + helper},
+		// Host-scoped helper: git invokes it ONLY for github.com, so the installation token is never
+		// offered to a third-party remote (e.g. a submodule on gitlab.com/bitbucket.org).
+		{"credential.https://github.com.helper", "!" + helper},
 		{"user.name", name},
 		{"user.email", email},
 		{"safe.directory", g.repoDir},
@@ -123,6 +125,29 @@ func (g *Git) Prepare(ctx context.Context) error {
 		return fmt.Errorf("clone: %w", err)
 	}
 	return g.git(ctx, "checkout", "-b", branch)
+}
+
+// PendingDiff stages all changes and returns a --stat summary plus the unified diff of what a
+// commit would capture, so a message can be written from the real change. changed=false when the
+// tree is clean (the no-op turn). Staging here is harmless: Commit re-stages idempotently.
+func (g *Git) PendingDiff(ctx context.Context) (summary, patch string, changed bool, err error) {
+	status, err := g.output(ctx, "status", "--porcelain")
+	if err != nil {
+		return "", "", false, err
+	}
+	if strings.TrimSpace(status) == "" {
+		return "", "", false, nil
+	}
+	if err := g.git(ctx, "add", "-A"); err != nil {
+		return "", "", false, err
+	}
+	if summary, err = g.output(ctx, "diff", "--cached", "--stat"); err != nil {
+		return "", "", false, err
+	}
+	if patch, err = g.output(ctx, "diff", "--cached"); err != nil {
+		return "", "", false, err
+	}
+	return summary, patch, true, nil
 }
 
 // Commit stages and commits all changes. It reports changed=false when the agent produced

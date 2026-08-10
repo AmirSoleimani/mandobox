@@ -3,7 +3,7 @@ package fleetagent
 import (
 	"context"
 
-	"github.com/acme/fleet/internal/session"
+	"github.com/acme/mandobox/internal/session"
 )
 
 // LaunchSpec is everything a driver needs to boot one microVM. The Manager assembles it

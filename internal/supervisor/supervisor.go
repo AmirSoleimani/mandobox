@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -41,6 +42,19 @@ type Supervisor struct {
 	queue        *Queue
 	home         string
 	keepAlive    time.Duration // idle backstop before the warm VM parks itself
+	prOpened     bool          // this guest has already opened the PR — later turns push, don't re-open
+	// commitMsg writes a commit message from the diff (request, agent summary, --stat, patch),
+	// returning "" to fall back to the static template. A field so tests inject a stub instead of
+	// making a real gateway call.
+	commitMsg func(ctx context.Context, request, agentSummary, diffStat, diffPatch string) string
+
+	// Human-attach tunnel (`code tunnel`) state — see tunnel.go. runCtx is the Run lifetime, so a
+	// tunnel started from a command handler dies with the session.
+	runCtx       context.Context
+	tunnelMu     sync.Mutex
+	tunnelOn     bool
+	tunnelCancel context.CancelFunc
+	tunnelWG     sync.WaitGroup // tracks the tunnel goroutine so teardown waits for it to unregister
 }
 
 // New builds a Supervisor rooted at workspaceDir (the mount point of the persistent volume).
@@ -54,7 +68,7 @@ func New(cfg BootConfig, deps Deps, workspaceDir string) *Supervisor {
 	if home == "" {
 		home = "/root"
 	}
-	return &Supervisor{
+	s := &Supervisor{
 		cfg:          cfg,
 		deps:         deps,
 		workspaceDir: workspaceDir,
@@ -65,6 +79,17 @@ func New(cfg BootConfig, deps Deps, workspaceDir string) *Supervisor {
 		home:         home,
 		keepAlive:    keepAliveWindow,
 	}
+	s.commitMsg = func(ctx context.Context, request, agentSummary, diffStat, diffPatch string) string {
+		// The commit-message helper follows the active provider, same as the agent: subscription talks
+		// to Anthropic directly on the OAuth token; otherwise the host gateway on the session token.
+		baseURL, token := cfg.LLM.BaseURL, cfg.LLM.AuthToken
+		if cfg.Agent.Auth == "subscription" && cfg.Agent.OAuthToken != "" {
+			baseURL, token = anthropicDirectURL, cfg.Agent.OAuthToken
+		}
+		return GenerateCommitMessage(ctx, baseURL, token, cfg.Agent.CheapModel,
+			request, agentSummary, diffStat, diffPatch)
+	}
+	return s
 }
 
 // Run executes the lifecycle: one turn per round, staying warm between rounds so a follow-up
@@ -73,6 +98,8 @@ func New(cfg BootConfig, deps Deps, workspaceDir string) *Supervisor {
 func (s *Supervisor) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	s.runCtx = ctx
+	defer s.shutdownTunnel() // stop + unregister any attach tunnel so it doesn't leak an account slot
 
 	wake := make(chan struct{}, 1)
 	s.startHeartbeat(ctx)
@@ -84,6 +111,11 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	if err := s.linkClaudeHome(); err != nil {
 		return s.failf(err, "link_claude")
 	}
+	// Drop the pre-authenticated `code tunnel` token into place so a human attach skips the device
+	// login (best-effort — no-op if none was provisioned).
+	if err := s.writeVSCodeAuth(""); err != nil {
+		s.deps.Log.Warn("vscode auth", "err", err)
+	}
 	if err := s.git.SetupCredentials(ctx); err != nil {
 		return s.failf(err, "git_credentials")
 	}
@@ -92,7 +124,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	// First turn: initial (opens the PR) or a cold resume (pushes), per the launch mode.
-	if err := s.turn(ctx, s.firstTurnSpec(), s.cfg.Task.Mode == ModeInitial); err != nil {
+	if err := s.turn(ctx, s.firstTurnSpec(), s.shouldOpenPR()); err != nil {
 		return err // failf already published agent_failed
 	}
 
@@ -106,6 +138,10 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		case <-ctx.Done(): // abort
 			return nil
 		case <-idle.C:
+			if s.tunnelActive() {
+				idle.Reset(s.keepAlive) // a human is attached via the tunnel — don't park under them
+				continue
+			}
 			_ = s.deps.Bus.Event(Event{Type: EventSessionIdle})
 			s.deps.Log.Info("session idle — parking")
 			return nil
@@ -121,7 +157,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 				return s.failf(err, "queue_drain")
 			}
 			if len(queued) > 0 {
-				if err := s.turn(ctx, s.resumeSpec(nil, queued), false); err != nil {
+				if err := s.turn(ctx, s.resumeSpec(nil, queued), s.shouldOpenPR()); err != nil {
 					return err
 				}
 			}
@@ -130,8 +166,16 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 }
 
-// turn runs one agent turn and finalizes it (commit/push; open a PR only on the first initial
-// turn). A failure publishes agent_failed and ends the session.
+// shouldOpenPR reports whether a turn that produces changes should open the PR: only for an
+// initial-mode session that hasn't opened one yet. This lets a later turn open the PR when the
+// first turn made no changes (e.g. the operator dispatched a placeholder, then supplied the plan) —
+// while a resume-mode session (its PR already exists) never opens a second one.
+func (s *Supervisor) shouldOpenPR() bool {
+	return s.cfg.Task.Mode == ModeInitial && !s.prOpened
+}
+
+// turn runs one agent turn and finalizes it (commit/push; open the PR when shouldOpenPR and the
+// turn changed something). A failure publishes agent_failed and ends the session.
 func (s *Supervisor) turn(ctx context.Context, spec AgentSpec, openPR bool) error {
 	res, err := s.deps.Agent.Run(ctx, spec, func(line []byte) {
 		if err := s.deps.Bus.Log(line); err != nil {
@@ -154,8 +198,25 @@ func (s *Supervisor) firstTurnSpec() AgentSpec {
 	return AgentSpec{
 		WorkDir: s.repoDir, Model: s.cfg.Claude.Model,
 		BaseURL: s.cfg.LLM.BaseURL, AuthToken: s.cfg.LLM.AuthToken,
-		Prompt: autonomousPreamble + s.cfg.Task.Prompt,
+		Auth: s.cfg.Agent.Auth, OAuthToken: s.cfg.Agent.OAuthToken,
+		Prompt: s.autonomousPreambleText() + s.cfg.Task.Prompt, SystemPrompt: s.cfg.Agent.Instructions,
 	}
+}
+
+// autonomousPreambleText / collaboratePreambleText return the operator's box-side override when set,
+// else the built-in default. This is how a box customizes the agent's base system prompt.
+func (s *Supervisor) autonomousPreambleText() string {
+	if p := strings.TrimSpace(s.cfg.Agent.PreambleAutonomous); p != "" {
+		return s.cfg.Agent.PreambleAutonomous + "\n\n"
+	}
+	return autonomousPreamble
+}
+
+func (s *Supervisor) collaboratePreambleText() string {
+	if p := strings.TrimSpace(s.cfg.Agent.PreambleCollaborate); p != "" {
+		return s.cfg.Agent.PreambleCollaborate + "\n\n"
+	}
+	return collaboratePreamble
 }
 
 // resumeSpec builds a --resume spec that continues the same Claude Code session.
@@ -163,19 +224,23 @@ func (s *Supervisor) resumeSpec(instructions, queued []string) AgentSpec {
 	return AgentSpec{
 		WorkDir: s.repoDir, Model: s.cfg.Claude.Model,
 		BaseURL: s.cfg.LLM.BaseURL, AuthToken: s.cfg.LLM.AuthToken,
-		Prompt: resumePrompt(instructions, queued), Resume: true,
-		ClaudeSessionID: s.readClaudeSession(),
+		Prompt: resumePrompt(s.collaboratePreambleText(), instructions, queued), Resume: true,
+		Auth: s.cfg.Agent.Auth, OAuthToken: s.cfg.Agent.OAuthToken,
+		ClaudeSessionID: s.readClaudeSession(), SystemPrompt: s.cfg.Agent.Instructions,
 	}
 }
 
 // finalizeTurn commits, pushes, and reports the turn. openPR opens the PR (first initial turn);
 // otherwise it is a push to the existing branch.
 func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool) error {
-	sha, changed, err := s.git.Commit(ctx, s.commitMessage())
-	if err != nil {
-		return s.failf(err, "git_commit")
-	}
 	tokens := res.Usage.InputTokens + res.Usage.OutputTokens
+
+	// Look at what changed before committing: a clean tree is the no-op turn, and the diff is what
+	// lets a cheap model write a real commit message instead of a fixed placeholder.
+	summary, patch, changed, err := s.git.PendingDiff(ctx)
+	if err != nil {
+		return s.failf(err, "git_diff")
+	}
 	if !changed {
 		// A no-op turn is a legitimate outcome, not a crash (§13) — it's usually the agent
 		// answering a question rather than editing. Carry its words so the thread stays a
@@ -183,6 +248,11 @@ func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool) 
 		s.deps.Log.Info("agent produced no changes")
 		return s.deps.Bus.Event(Event{Type: EventPushDone, Stage: "no_changes",
 			Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens})
+	}
+
+	sha, _, err := s.git.Commit(ctx, s.commitMessageFor(ctx, res, summary, patch))
+	if err != nil {
+		return s.failf(err, "git_commit")
 	}
 	if err := s.git.Push(ctx); err != nil {
 		return s.failf(err, "git_push")
@@ -193,6 +263,7 @@ func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool) 
 			return s.failf(err, "open_pr")
 		}
 		s.deps.Log.Info("opened PR", "number", number, "url", url)
+		s.prOpened = true // later turns push to this PR instead of opening another
 		return s.deps.Bus.Event(Event{Type: EventPROpened, PRNumber: number, PRURL: url,
 			CommitSHA: sha, Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens})
 	}
@@ -241,6 +312,17 @@ func (s *Supervisor) subscribeCommands(cancel context.CancelFunc, wake chan<- st
 		case CommandAbort:
 			s.deps.Log.Warn("abort received", "reason", c.Reason)
 			cancel()
+		case CommandAttach:
+			s.deps.Log.Info("attach requested — starting tunnel")
+			// The tunnel token rides the attach command (delivered only when an operator attaches),
+			// so it never sits in a non-attached guest.
+			if err := s.writeVSCodeAuth(c.Text); err != nil {
+				s.deps.Log.Warn("write vscode auth failed", "err", err)
+			}
+			s.startTunnel()
+		case CommandDetach:
+			s.deps.Log.Info("detach requested — stopping tunnel")
+			s.detach()
 		}
 	})
 	if err != nil {
@@ -261,6 +343,30 @@ func (s *Supervisor) linkClaudeHome() error {
 	}
 	_ = os.RemoveAll(link)
 	return os.Symlink(target, link)
+}
+
+// vscodeDataDir is the `code tunnel` CLI data dir. We pin it (rather than let the CLI default to
+// $HOME/.vscode/cli) so writeVSCodeAuth and runTunnel always agree on where the auth token lives,
+// independent of HOME — and put it on the workspace volume, which is reliably writable and persists
+// across a resume. runTunnel passes this same path via --cli-data-dir.
+func (s *Supervisor) vscodeDataDir() string { return filepath.Join(s.fleetDir, "vscode-cli") }
+
+// writeVSCodeAuth drops the pre-authenticated `code tunnel` token (from the boot config) into the
+// CLI's data dir, so a human attach skips the GitHub device login. No-op when none was provisioned
+// (then the operator device-logs-in on first attach).
+func (s *Supervisor) writeVSCodeAuth(token string) error {
+	tok := strings.TrimSpace(token)
+	if tok == "" {
+		tok = strings.TrimSpace(s.cfg.VSCode.TunnelToken) // legacy fallback (token injected via MMDS)
+	}
+	if tok == "" {
+		return nil
+	}
+	dir := s.vscodeDataDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "token.json"), []byte(tok), 0o600)
 }
 
 func (s *Supervisor) claudeSessionFile() string {
@@ -288,6 +394,31 @@ func (s *Supervisor) readClaudeSession() string {
 	return strings.TrimSpace(string(b))
 }
 
+// commitMessageFor writes the commit message from the actual diff via a cheap model, so history
+// reflects what changed and why rather than a fixed line. Falls back to the static template if the
+// model is unavailable or returns nothing — a commit must never hinge on the LLM.
+func (s *Supervisor) commitMessageFor(ctx context.Context, res Result, summary, patch string) string {
+	if s.commitMsg != nil {
+		if msg := s.commitMsg(ctx, s.commitAsk(), res.Result, summary, patch); msg != "" {
+			return msg
+		}
+	}
+	return s.commitMessage()
+}
+
+// commitAsk is the request context handed to the commit-message model: the original prompt on the
+// first run, the reviewer's instructions on a resume.
+func (s *Supervisor) commitAsk() string {
+	if s.cfg.Task.Mode == ModeResume {
+		if ask := strings.TrimSpace(strings.Join(s.cfg.Task.Instructions, "\n")); ask != "" {
+			return ask
+		}
+		return "Address the reviewer's feedback on the open PR."
+	}
+	return s.cfg.Task.Prompt
+}
+
+// commitMessage is the static fallback used only when the cheap-model call fails.
 func (s *Supervisor) commitMessage() string {
 	if s.cfg.Task.Mode == ModeResume {
 		return fmt.Sprintf("agent: address review feedback (%s)", s.cfg.SessionID)
@@ -297,15 +428,18 @@ func (s *Supervisor) commitMessage() string {
 
 func (s *Supervisor) prTitle() string { return firstLine(s.cfg.Task.Prompt) }
 
+// prBody frames the PR: the task as a blockquote, then the agent's own summary — which now carries
+// its Verification and Risks sections (see selfReview) so a reviewer gets evidence and the agent's
+// honest uncertainty inline, not just a diff.
 func (s *Supervisor) prBody(res Result) string {
 	var b strings.Builder
-	b.WriteString(s.cfg.Task.Prompt)
-	b.WriteString("\n\n---\n")
-	if res.Result != "" {
-		b.WriteString(res.Result)
+	prompt := strings.TrimSpace(s.cfg.Task.Prompt)
+	fmt.Fprintf(&b, "**Task**\n> %s\n\n---\n\n", strings.ReplaceAll(prompt, "\n", "\n> "))
+	if r := strings.TrimSpace(res.Result); r != "" {
+		b.WriteString(r)
 		b.WriteString("\n\n")
 	}
-	fmt.Fprintf(&b, "Opened by the agent fleet · session `%s` · cost $%.4f\n", s.cfg.SessionID, res.TotalCostUSD)
+	fmt.Fprintf(&b, "---\n_Opened by the agent fleet · session `%s` · cost $%.4f_\n", s.cfg.SessionID, res.TotalCostUSD)
 	return b.String()
 }
 
@@ -320,8 +454,46 @@ const autonomousPreamble = "You are running non-interactively, with no human ava
 	"task is flawed, risky, or there is a clearly better approach, do the better thing and " +
 	"explain why in your summary rather than following a bad instruction literally. Do NOT run " +
 	"git commit, git push, or gh, and do NOT open a pull request: committing, pushing, and the " +
-	"PR are handled automatically once you finish. Just make the file changes (and run tests or " +
-	"tools if useful).\n\n"
+	"PR are handled automatically once you finish. Just make the file changes. " +
+	artifactHygiene + " " + selfReview + "\n\n"
+
+// selfReview makes every code change arrive with its own evidence, so a reviewer can trust it
+// cheaply instead of re-deriving what it does and whether it works. The agent verifies its own
+// work and states, honestly, where it's unsure — the highest-leverage thing for making review
+// scale (the doer knows its risks better than a reviewer reading the diff).
+const selfReview = "Whenever you change code, verify it before finishing: if the project has " +
+	"tests, run the ones relevant to your change (and add a test when you add new behavior), and " +
+	"run whatever linter or build the repo uses. You CAN install what you need: this sandbox " +
+	"reaches the git, npm, PyPI, and Go module registries through a proxy that is already set in " +
+	"your environment, so install the project's real dependencies and run its ACTUAL test suite " +
+	"rather than hand-checking or assuming (pip and python3-venv are available; a direct package " +
+	"download that fails usually just means that registry isn't on the egress allowlist — say so " +
+	"rather than giving up on verification). To learn how this project installs its " +
+	"dependencies and runs its tests, treat its own CI config (for example the files under " +
+	".github/workflows) or its README/CONTRIBUTING as the source of truth — those are the exact " +
+	"commands the maintainers use — rather than guessing at them. Then end your final message with " +
+	"two short sections — a '## Verification' section giving the exact commands you ran and their " +
+	"outcome (or, honestly, why you couldn't run them), and a '## Risks' section naming the " +
+	"riskiest part of the change and anything you're genuinely unsure about, so the reviewer knows " +
+	"where to look (write 'None — straightforward' only if that is truly the case). Never claim a " +
+	"test passed that you did not actually run."
+
+// artifactHygiene is shared by both preambles: the supervisor commits everything present in the
+// tree (git add -A), so build artifacts and caches left behind end up in the PR. The agent can't
+// run git, but it can edit a .gitignore — so it must keep the tree to source + intended files.
+const artifactHygiene = "Commit only source and intended files. If your work produces build " +
+	"artifacts or caches (for example __pycache__/, *.pyc, node_modules/, dist/, build/, " +
+	".pytest_cache/, coverage files), do NOT leave them in the working tree — everything present " +
+	"gets committed. Add or update a .gitignore to exclude them (create one if the repo has none), " +
+	"and delete any that already slipped in."
+
+// DefaultAutonomousPreamble / DefaultCollaboratePreamble expose the built-in preambles so the worker
+// can materialize them to disk for the dashboard (which shows them as the editable default / reset
+// baseline). They are the canonical source; an operator override replaces them per box.
+const (
+	DefaultAutonomousPreamble  = autonomousPreamble
+	DefaultCollaboratePreamble = collaboratePreamble
+)
 
 // collaboratePreamble frames a resume turn as a chat with the reviewer: answer questions, make
 // changes when asked, keep the final message conversational (it is posted back as the reply).
@@ -337,13 +509,13 @@ const collaboratePreamble = "You are collaborating on an open pull request with 
 	"editing files; if you think it is wrong or there is a better path, do that and explain, or ask " +
 	"one sharp clarifying question. Your previous work is already in this workspace on its branch. " +
 	"Do NOT run git commit, git push, or gh, and do NOT open a pull request — that is handled for " +
-	"you. Your final message is posted straight back to the reviewer as your reply, so address them " +
-	"directly.\n\n"
+	"you. " + artifactHygiene + " " + selfReview + " Your final message is posted straight back to " +
+	"the reviewer as your reply, so address them directly.\n\n"
 
 // resumePrompt assembles a resume turn from the reviewer's messages (§8.2).
-func resumePrompt(instructions, queued []string) string {
+func resumePrompt(preamble string, instructions, queued []string) string {
 	var b strings.Builder
-	b.WriteString(collaboratePreamble)
+	b.WriteString(preamble)
 	for _, in := range instructions {
 		fmt.Fprintf(&b, "- %s\n", in)
 	}

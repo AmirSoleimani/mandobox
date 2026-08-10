@@ -1,8 +1,8 @@
 # {{ ansible_managed }}
 [Unit]
 Description=NATS server (single-machine control plane)
-After=network-online.target fleet-net-anchor.service
-Wants=network-online.target fleet-net-anchor.service
+After=network-online.target mando-net-anchor.service
+Wants=network-online.target mando-net-anchor.service
 
 [Service]
 Type=exec

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -134,5 +135,79 @@ func TestConnectDenied(t *testing.T) {
 	g.ServeHTTP(rr, req)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("CONNECT to denied host = %d, want 403", rr.Code)
+	}
+}
+
+// TestConnectNon443Denied: a guest must not tunnel non-HTTPS ports through an allowlisted host.
+func TestConnectNon443Denied(t *testing.T) {
+	g, _ := New(Config{UpstreamBaseURL: "https://api.anthropic.com", UpstreamKey: "k",
+		Allowlist: []string{"github.com"}, Mode: ModeOpen})
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodConnect, "http://github.com:22", nil)
+	req.Host = "github.com:22"
+	g.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("CONNECT github.com:22 = %d, want 403 (port pin)", rr.Code)
+	}
+}
+
+// TestConnectInternalDeniedOpenMode: even in ModeOpen, a guest cannot pivot to host-internal targets.
+func TestConnectInternalDeniedOpenMode(t *testing.T) {
+	g, _ := New(Config{UpstreamBaseURL: "https://api.anthropic.com", UpstreamKey: "k", Mode: ModeOpen})
+	for _, target := range []string{"127.0.0.1:443", "[::1]:443", "169.254.169.254:443", "172.31.0.1:443", "192.168.1.5:443", "10.0.0.1:443"} {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodConnect, "http://"+target, nil)
+		req.Host = target
+		g.ServeHTTP(rr, req)
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("ModeOpen CONNECT %s = %d, want 403 (internal-IP guard)", target, rr.Code)
+		}
+	}
+}
+
+func TestIsInternalIP(t *testing.T) {
+	internal := []string{"127.0.0.1", "::1", "169.254.169.254", "172.31.0.1", "10.1.2.3", "192.168.0.1", "0.0.0.0", "fe80::1"}
+	external := []string{"140.82.121.3", "8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"}
+	for _, s := range internal {
+		if !isInternalIP(net.ParseIP(s)) {
+			t.Errorf("isInternalIP(%s) = false, want true", s)
+		}
+	}
+	for _, s := range external {
+		if isInternalIP(net.ParseIP(s)) {
+			t.Errorf("isInternalIP(%s) = true, want false", s)
+		}
+	}
+}
+
+// TestInferencePathAllowlist: the LLM reverse-proxy admits only inference routes, so a guest can't
+// reach LiteLLM's admin surface with the injected master key.
+func TestInferencePathAllowlist(t *testing.T) {
+	g, _ := New(Config{UpstreamBaseURL: "https://up.example", UpstreamKey: "k"})
+	deny := []struct {
+		m, p string
+	}{
+		{http.MethodPost, "/model/new"}, {http.MethodGet, "/model/info"}, {http.MethodGet, "/key/info"},
+		{http.MethodPost, "/key/generate"}, {http.MethodGet, "/config/yaml"}, {http.MethodGet, "/spend/logs"},
+		{http.MethodPost, "/user/new"}, {http.MethodGet, "/health"}, {http.MethodGet, "/v1/messages"},
+	}
+	for _, c := range deny {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(c.m, c.p, nil)
+		req.Header.Set("X-Api-Key", "sess")
+		g.ServeHTTP(rr, req)
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("%s %s = %d, want 403 (not an inference route)", c.m, c.p, rr.Code)
+		}
+	}
+	// Allowed routes must NOT be 403 (they'll fail to dial up.example, but must pass the allowlist).
+	for _, c := range []struct{ m, p string }{{http.MethodPost, "/v1/messages"}, {http.MethodPost, "/v1/messages/count_tokens"}, {http.MethodPost, "/v1/chat/completions"}, {http.MethodGet, "/v1/models"}} {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(c.m, c.p, nil)
+		req.Header.Set("X-Api-Key", "sess")
+		g.ServeHTTP(rr, req)
+		if rr.Code == http.StatusForbidden {
+			t.Errorf("%s %s = 403, want it allowed through the path guard", c.m, c.p)
+		}
 	}
 }

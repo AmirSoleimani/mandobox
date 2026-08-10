@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/acme/fleet/internal/session"
+	"github.com/acme/mandobox/internal/session"
 )
 
 type fakeDriver struct {

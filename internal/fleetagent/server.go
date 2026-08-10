@@ -11,10 +11,10 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/acme/fleet/internal/session"
+	"github.com/acme/mandobox/internal/session"
 )
 
-// Server exposes the fleet-agent HTTP API. It is mTLS-only in production; the control plane
+// Server exposes the mando-agent HTTP API. It is mTLS-only in production; the control plane
 // initiates every call (PLAN §7.1). The service is thin: it validates, delegates to the
 // Manager, and maps errors to status codes.
 type Server struct {

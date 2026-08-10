@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+[Unit]
+Description=mandobox management console (localhost-only, reached over SSH tunnel)
+After=network-online.target temporal.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as root: it edits {{ dashboard_config_path }} and drives update-tools.sh (which chroots and
+# writes golden images). It binds to {{ dashboard_addr }} — access is gated by who can reach the box.
+User=root
+EnvironmentFile={{ dashboard_conf_dir }}/dashboard.env
+ExecStart={{ dashboard_bin }}
+Restart=on-failure
+RestartSec=3
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

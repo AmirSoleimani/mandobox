@@ -47,3 +47,9 @@ temporal_cli_url: >-
   https://github.com/temporalio/cli/releases/download/v{{ temporal_cli_version }}/temporal_cli_{{ temporal_cli_version }}_linux_{{ temporal_arch }}.tar.gz
 temporal_ui_url: >-
   https://github.com/temporalio/ui-server/releases/download/v{{ temporal_ui_version }}/ui-server_{{ temporal_ui_version }}_linux_{{ temporal_arch }}.tar.gz
+
+# sha256 of each pinned release tarball — get_url fails closed on a mismatch (supply-chain integrity).
+# Update alongside the versions above (from each project's release checksums, or `sha256sum` the file).
+temporal_server_sha256: "36d3227fbbc522409bd2ac259db58d23f190e83f55f1aebe85564190b34fae16"
+temporal_cli_sha256: "d8421bda989e6514b4bdb4d63a9012a8a05a806892e881a5aad8510496349a94"
+temporal_ui_sha256: "1c8917ff45529d41629a21dab7618d25107f259b4364dc804ecdd06781995eb3"

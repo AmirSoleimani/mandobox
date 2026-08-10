@@ -27,6 +27,7 @@
   ansible.builtin.get_url:
     url: "{{ nats_download_url }}"
     dest: "{{ nats_install_dir }}/nats-server-v{{ nats_version }}-linux-{{ nats_arch }}.tar.gz"
+    checksum: "sha256:{{ nats_download_sha256 }}"
     owner: root
     group: root
     mode: "0644"
@@ -48,6 +49,37 @@
     owner: root
     group: root
     mode: "0755"
+  notify: Restart nats
+
+- name: Detect whether the NATS auth material has been generated
+  ansible.builtin.stat:
+    path: "{{ nats_operator_jwt_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: nats_operator_stat
+
+- name: Decide auth mode
+  ansible.builtin.set_fact:
+    nats_auth_enabled: "{{ nats_operator_stat.stat.exists }}"
+
+- name: Load account public key + JWT for the config (auth mode only)
+  ansible.builtin.set_fact:
+    nats_account_pub: "{{ lookup('file', nats_account_pub_src) | trim }}"
+    nats_account_jwt: "{{ lookup('file', nats_account_jwt_src) | trim }}"
+  when: nats_auth_enabled
+
+- name: Install NATS operator + account JWTs (server trust chain)
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: "{{ nats_operator_jwt_src }}", dest: "{{ nats_conf_dir }}/operator.jwt" }
+    - { src: "{{ nats_account_jwt_src }}", dest: "{{ nats_conf_dir }}/account.jwt" }
+  when: nats_auth_enabled
   notify: Restart nats
 
 - name: Install the nats config

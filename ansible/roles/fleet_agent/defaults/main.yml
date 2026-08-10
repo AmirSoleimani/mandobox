@@ -6,29 +6,24 @@ fleet_agent_dist_dir: "{{ playbook_dir }}/../bin"
 fleet_agent_tls_src_dir: "{{ playbook_dir }}/../secrets/fleet-tls"
 
 # On-host layout.
-fleet_agent_bin: /usr/local/bin/fleet-agent
-fleet_agent_reconciler_bin: /usr/local/bin/fleet-reconciler
+fleet_agent_bin: /usr/local/bin/mando-agent
 fleet_agent_conf_dir: /etc/fleet
 fleet_agent_tls_dir: /etc/fleet/tls
-fleet_agent_authority_file: /etc/fleet/expected-sessions.json
 
-# fleet-agent runtime.
+# mando-agent runtime.
 fleet_agent_listen: "0.0.0.0:{{ fleet_agent_port }}"
 fleet_agent_max_vms: 8
 fleet_agent_workspace_size_mib: 8192
 
-# Reconciler: in M2 it runs on the fleet host itself, pointing at the local agent. When the
-# control plane exists (M4) it moves there and this can be disabled.
-fleet_agent_deploy_reconciler: true
-fleet_agent_reconciler_url: "https://127.0.0.1:{{ fleet_agent_port }}"
-fleet_agent_reconciler_interval: 5m
-fleet_agent_reconciler_grace: 3m
+# The orphan-VM reaper is no longer a standalone service — it's the worker's scheduled
+# ReconcileWorkflow (control_plane role). This role only installs the mTLS client cert it uses.
 
 # TLS material to install. Keys go to 0600.
 fleet_agent_tls_files:
   - { name: server.crt, mode: "0644" }
   - { name: server.key, mode: "0600" }
   - { name: client-ca.crt, mode: "0644" }
+# The mTLS client identity the worker presents to mando-agent's API (launch + reconcile /vms).
 fleet_agent_reconciler_tls_files:
   - { name: reconciler.crt, mode: "0644" }
   - { name: reconciler.key, mode: "0600" }

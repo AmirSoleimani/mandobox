@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/acme/fleet/internal/session"
+	"github.com/acme/mandobox/internal/session"
 )
 
 // imageSHAPattern constrains image identifiers to a hex digest, so they can never be used

@@ -81,7 +81,7 @@ const tapMaxLen = 15
 
 // TapName derives the host tap device name for this session. Interface names are capped
 // at 15 characters, so this is a deliberate, documented truncation of the ULID suffix and
-// is NOT unique on its own (§5) — fleet-agent tracks the authoritative session_id in the
+// is NOT unique on its own (§5) — mando-agent tracks the authoritative session_id in the
 // per-VM state directory. Form: "tap" + first 12 chars of the suffix.
 func (id ID) TapName() string {
 	suffix := string(id)[2:] // drop "s_"

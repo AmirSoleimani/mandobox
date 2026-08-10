@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-// ConfigureNetwork brings up lo and eth0 with the static point-to-point address fleet-agent
+// ConfigureNetwork brings up lo and eth0 with the static point-to-point address mando-agent
 // allocated, sets the default route, and writes resolv.conf — no DHCP (PLAN §8.1). resolv is
 // the path to write (real /etc/resolv.conf in the guest; a temp file in tests).
 func ConfigureNetwork(ctx context.Context, runner Runner, net NetworkConfig, resolv string) error {

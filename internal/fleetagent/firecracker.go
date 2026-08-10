@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/acme/fleet/internal/session"
+	"github.com/acme/mandobox/internal/session"
 )
 
 // socketWait is how long to wait for Firecracker's API socket to appear after jailer start.
@@ -112,7 +112,7 @@ func (d *FirecrackerDriver) Launch(ctx context.Context, spec LaunchSpec) (Launch
 
 // startJailer starts jailer, which execs into Firecracker in place (so the recorded PID's
 // comm is "firecracker", which the reaper checks). It runs detached in its own session so
-// the VM survives a fleet-agent restart; a goroutine reaps it when it eventually exits.
+// the VM survives a mando-agent restart; a goroutine reaps it when it eventually exits.
 func (d *FirecrackerDriver) startJailer(id session.ID) (int, error) {
 	args := []string{
 		"--id", jailerID(id),
@@ -137,6 +137,24 @@ func (d *FirecrackerDriver) startJailer(id session.ID) (int, error) {
 	pid := cmd.Process.Pid
 	go func() { _ = cmd.Wait() }() // reap on eventual exit; VM outlives this process's parent
 	return pid, nil
+}
+
+// driveRateLimiter returns a Firecracker rate_limiter that bounds per-drive block I/O, or nil when
+// disabled (DriveBandwidthMBps <= 0). A one-time burst of 2× lets boot/clone run at full speed before
+// the sustained cap engages, so normal builds aren't throttled.
+func (d *FirecrackerDriver) driveRateLimiter() map[string]any {
+	mbps := d.cfg.DriveBandwidthMBps
+	if mbps <= 0 {
+		return nil
+	}
+	perSec := int64(mbps) * 1024 * 1024
+	return map[string]any{
+		"bandwidth": map[string]any{
+			"size":           perSec,
+			"one_time_burst": perSec * 2,
+			"refill_time":    1000,
+		},
+	}
 }
 
 // jailerLogPath is where jailer/firecracker output is captured for debugging.
@@ -186,6 +204,22 @@ func (d *FirecrackerDriver) configure(ctx context.Context, spec LaunchSpec, sock
 		bootArgs = defaultBootArgs
 	}
 
+	// Writable, ephemeral per-VM reflink copies (the guest writes /etc/resolv.conf, ~/.gitconfig,
+	// caches, etc.; discarded on destroy). A rate_limiter caps block I/O so one guest can't saturate
+	// host disk and starve co-resident sessions.
+	rl := d.driveRateLimiter()
+	rootfsDrive := map[string]any{
+		"drive_id": "rootfs", "path_on_host": "/rootfs.ext4",
+		"is_root_device": true, "is_read_only": false,
+	}
+	workspaceDrive := map[string]any{
+		"drive_id": "workspace", "path_on_host": "/workspace.ext4",
+		"is_root_device": false, "is_read_only": false,
+	}
+	if rl != nil {
+		rootfsDrive["rate_limiter"] = rl
+		workspaceDrive["rate_limiter"] = rl
+	}
 	steps := []struct {
 		path string
 		body any
@@ -194,16 +228,8 @@ func (d *FirecrackerDriver) configure(ctx context.Context, spec LaunchSpec, sock
 			"kernel_image_path": "/vmlinux",
 			"boot_args":         bootArgs,
 		}},
-		// Writable: each VM boots its own reflink copy, so the guest can write /etc/resolv.conf,
-		// ~/.gitconfig, caches, etc. The copy is ephemeral and discarded on destroy.
-		{"/drives/rootfs", map[string]any{
-			"drive_id": "rootfs", "path_on_host": "/rootfs.ext4",
-			"is_root_device": true, "is_read_only": false,
-		}},
-		{"/drives/workspace", map[string]any{
-			"drive_id": "workspace", "path_on_host": "/workspace.ext4",
-			"is_root_device": false, "is_read_only": false,
-		}},
+		{"/drives/rootfs", rootfsDrive},
+		{"/drives/workspace", workspaceDrive},
 		{"/network-interfaces/eth0", map[string]any{
 			"iface_id": "eth0", "host_dev_name": spec.Net.Tap,
 			"guest_mac": deriveMAC(spec.Net.GuestIP),
@@ -317,7 +343,7 @@ func killProcess(pid int, grace time.Duration) {
 }
 
 // sessionFirecrackerPIDs finds every Firecracker process launched under this session's jailer id
-// (matched on the --id argument in /proc/<pid>/cmdline), regardless of the pid fleet-agent
+// (matched on the --id argument in /proc/<pid>/cmdline), regardless of the pid mando-agent
 // recorded. Used to guarantee teardown and to clear a stale process before a relaunch.
 func sessionFirecrackerPIDs(jailerID string) []int {
 	entries, err := os.ReadDir("/proc")

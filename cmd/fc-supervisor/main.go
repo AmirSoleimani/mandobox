@@ -12,7 +12,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/acme/fleet/internal/supervisor"
+	"github.com/acme/mandobox/internal/supervisor"
 )
 
 func main() {
@@ -37,6 +37,16 @@ func main() {
 	}
 	log.Info("booted", "session_id", cfg.SessionID, "repo", cfg.Repo.Slug, "mode", cfg.Task.Mode)
 
+	// Adopt the hostname the VS Code tunnel token was minted under. The CLI binds its stored auth
+	// to the hostname, so without this a human attach falls back to the GitHub device login even
+	// though the token is present (§remote-attach). Writing the kernel hostname via /proc is
+	// equivalent to sethostname(2) and keeps this file OS-portable to compile. No-op when unset.
+	if h := cfg.VSCode.Hostname; h != "" {
+		if err := os.WriteFile("/proc/sys/kernel/hostname", []byte(h), 0o644); err != nil {
+			log.Warn("set hostname", "name", h, "err", err)
+		}
+	}
+
 	// Route git/gh through the host egress gateway (the only sanctioned egress path). MMDS is
 	// already read above; NATS uses a raw TCP connection unaffected by these. NO_PROXY keeps
 	// MMDS and loopback direct.
@@ -55,10 +65,17 @@ func main() {
 	}
 	bus := supervisor.NewBus(transport, cfg.SessionID)
 
+	// Pick the coding-agent harness from the resolved config (docs/configuration.md). Default Claude.
+	var agent supervisor.AgentRunner = supervisor.NewClaudeRunner()
+	if cfg.Agent.Harness == "codex" {
+		agent = supervisor.NewCodexRunner()
+		log.Info("agent harness", "harness", "codex")
+	}
+
 	sup := supervisor.New(cfg, supervisor.Deps{
 		Bus:      bus,
 		Runner:   runner,
-		Agent:    supervisor.NewClaudeRunner(),
+		Agent:    agent,
 		Platform: platform,
 		Log:      log,
 	}, "/workspace")

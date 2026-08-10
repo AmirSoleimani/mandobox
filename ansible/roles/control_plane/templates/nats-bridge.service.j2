@@ -11,6 +11,15 @@ Environment=FLEET_LOG_DIR={{ control_plane_log_dir }}
 ExecStart=/usr/local/bin/nats-bridge
 Restart=on-failure
 RestartSec=3
+# Hardening (defense-in-depth): a parser flaw must not escalate to host root.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+ReadWritePaths={{ control_plane_log_dir }}
 
 [Install]
 WantedBy=multi-user.target

@@ -1,5 +1,5 @@
 ---
-reaper_bin: /usr/local/sbin/fleet-reaper
+reaper_bin: /usr/local/sbin/mando-reaper
 
 # Absolute VM lifetime and heartbeat-staleness thresholds (PLAN §7.6).
 reaper_max_lifetime_seconds: 21600 # 6h

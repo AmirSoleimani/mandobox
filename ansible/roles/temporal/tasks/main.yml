@@ -71,6 +71,7 @@
   ansible.builtin.get_url:
     url: "{{ temporal_server_url }}"
     dest: "{{ temporal_dl_dir }}/temporal_{{ temporal_version }}.tar.gz"
+    checksum: "sha256:{{ temporal_server_sha256 }}"
     mode: "0644"
 
 - name: Extract the temporal server bundle
@@ -96,6 +97,7 @@
   ansible.builtin.get_url:
     url: "{{ temporal_cli_url }}"
     dest: "{{ temporal_dl_dir }}/temporal_cli_{{ temporal_cli_version }}.tar.gz"
+    checksum: "sha256:{{ temporal_cli_sha256 }}"
     mode: "0644"
 
 - name: Extract the temporal CLI
@@ -116,6 +118,7 @@
   ansible.builtin.get_url:
     url: "{{ temporal_ui_url }}"
     dest: "{{ temporal_dl_dir }}/ui-server_{{ temporal_ui_version }}.tar.gz"
+    checksum: "sha256:{{ temporal_ui_sha256 }}"
     mode: "0644"
 
 - name: Extract the temporal UI server

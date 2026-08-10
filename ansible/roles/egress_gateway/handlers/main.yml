@@ -3,7 +3,7 @@
   ansible.builtin.systemd_service:
     daemon_reload: true
 
-- name: Restart fleet-gateway
+- name: Restart mando-gateway
   ansible.builtin.systemd_service:
-    name: fleet-gateway
+    name: mando-gateway
     state: restarted

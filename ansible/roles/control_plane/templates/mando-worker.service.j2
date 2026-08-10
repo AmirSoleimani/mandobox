@@ -1,0 +1,27 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Fleet Temporal worker (PRWorkflow + activities)
+After=network-online.target temporal.service mando-agent.service nats.service
+Wants=network-online.target
+Requires=temporal.service
+
+[Service]
+Type=simple
+EnvironmentFile={{ control_plane_conf_dir }}/control-plane.env
+EnvironmentFile=-{{ control_plane_conf_dir }}/slack.env
+ExecStart=/usr/local/bin/mando-worker
+Restart=on-failure
+RestartSec=3
+# Hardening (defense-in-depth). ReadWritePaths carves out the dirs the worker writes (preamble
+# .default files under the conf dir; session meta under the log dir) while /usr and /boot stay read-only.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+ReadWritePaths={{ control_plane_conf_dir }} {{ control_plane_log_dir }}
+
+[Install]
+WantedBy=multi-user.target

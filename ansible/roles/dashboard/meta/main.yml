@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: Chelodo
+  description: Deploy the mando-dashboard management console (localhost-only, observe + manage).
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - fleet
+    - dashboard
+dependencies: []

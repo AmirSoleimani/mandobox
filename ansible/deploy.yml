@@ -1,5 +1,5 @@
 ---
-# Deploy all services onto the single fleet host: fleet-agent + reconciler (M2), the egress
+# Deploy all services onto the single fleet host: mando-agent + reconciler (M2), the egress
 # gateway, and NATS (M3). This is a personal, single-machine build — there is no separate
 # control plane. Prerequisites (on the controller):
 #   make dist                                                   # cross-compile binaries -> bin/
@@ -23,3 +23,5 @@
       tags: [temporal]
     - role: control_plane
       tags: [control_plane]
+    - role: dashboard
+      tags: [dashboard]

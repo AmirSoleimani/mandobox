@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acme/fleet/internal/session"
+	"github.com/acme/mandobox/internal/session"
 )
 
 func newTestServer(t *testing.T, maxVMs int) (http.Handler, *Manager) {

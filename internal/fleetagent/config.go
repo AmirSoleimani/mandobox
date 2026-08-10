@@ -1,7 +1,7 @@
 package fleetagent
 
-// Config is fleet-agent's host configuration. Defaults mirror ansible/group_vars/fleet.yml
-// so a hand-run agent and an Ansible-deployed one agree. fleet-agent is thin by design
+// Config is mando-agent's host configuration. Defaults mirror ansible/group_vars/fleet.yml
+// so a hand-run agent and an Ansible-deployed one agree. mando-agent is thin by design
 // (PLAN §7.1): it holds no policy, only the paths and limits it needs to place a microVM.
 type Config struct {
 	// Paths (PLAN §7, I7).
@@ -30,6 +30,10 @@ type Config struct {
 
 	// Default workspace volume size when a session's volume is first created.
 	WorkspaceSizeMiB int
+
+	// DriveBandwidthMBps caps each VM's per-drive block I/O (a Firecracker rate_limiter), so one
+	// guest can't saturate host disk and starve co-resident sessions (noisy-neighbor). 0 = unlimited.
+	DriveBandwidthMBps int
 }
 
 // DefaultConfig returns the built-in defaults matching group_vars/fleet.yml.
@@ -49,5 +53,8 @@ func DefaultConfig() Config {
 		HostGatewayIP:    "172.31.0.1",
 		MaxVMs:           8,
 		WorkspaceSizeMiB: 8192,
+		// Generous enough not to slow real builds (npm/cargo/apt), tight enough to bound a runaway
+		// guest's host disk impact. Tune down for denser packing, or 0 to disable.
+		DriveBandwidthMBps: 250,
 	}
 }

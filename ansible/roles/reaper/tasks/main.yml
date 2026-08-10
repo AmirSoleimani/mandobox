@@ -1,7 +1,7 @@
 ---
 - name: Install the reaper script
   ansible.builtin.copy:
-    src: fleet-reaper
+    src: mando-reaper
     dest: "{{ reaper_bin }}"
     owner: root
     group: root
@@ -9,8 +9,8 @@
 
 - name: Install the reaper service unit
   ansible.builtin.template:
-    src: fleet-reaper.service.j2
-    dest: /etc/systemd/system/fleet-reaper.service
+    src: mando-reaper.service.j2
+    dest: /etc/systemd/system/mando-reaper.service
     owner: root
     group: root
     mode: "0644"
@@ -18,8 +18,8 @@
 
 - name: Install the reaper timer unit
   ansible.builtin.template:
-    src: fleet-reaper.timer.j2
-    dest: /etc/systemd/system/fleet-reaper.timer
+    src: mando-reaper.timer.j2
+    dest: /etc/systemd/system/mando-reaper.timer
     owner: root
     group: root
     mode: "0644"
@@ -32,6 +32,6 @@
 
 - name: Enable and start the reaper timer
   ansible.builtin.systemd_service:
-    name: fleet-reaper.timer
+    name: mando-reaper.timer
     enabled: true
     state: started

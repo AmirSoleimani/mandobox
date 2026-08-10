@@ -1,9 +1,23 @@
 # {{ ansible_managed }}
 #
-# M3 DEV configuration — NO AUTH. This is deliberately minimal so M3 can be tested end to
-# end. M4 replaces it with operator/account JWT scoping so each guest's credential is limited
-# to agent.<session_id>.> (PLAN §9, §6.3). Do NOT expose this port to the public internet;
-# only the fleet host (via nftables forward) should reach it.
+# Control-bus config. Do NOT expose this port to the public internet; only the fleet host reaches it
+# (nftables input accept from the guest taps + host-local clients).
 listen: {{ nats_listen }}
 max_payload: {{ nats_max_payload }}
 server_name: fleet-control
+{% if nats_auth_enabled | default(false) %}
+
+# Decentralized JWT auth (per-session isolation). Each guest presents a per-session user credential
+# confined to `agent.<session_id>.>` — it cannot read, inject, or forge on any other session. The
+# worker + nats-bridge use a broad service credential. A credential-less connection is REFUSED.
+operator: {{ nats_conf_dir }}/operator.jwt
+resolver: MEMORY
+resolver_preload: {
+  {{ nats_account_pub }}: {{ nats_account_jwt }}
+}
+{% else %}
+
+# NO AUTH (legacy). Generate the auth material on the controller (`mando-natsauth -out secrets/nats`)
+# and redeploy to enable per-session JWT scoping. Until then the bus is unauthenticated — every guest
+# can reach every session's streams, so keep this box single-tenant/trusted.
+{% endif %}

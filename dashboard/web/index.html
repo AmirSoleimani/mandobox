@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mandobox</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark"></span><span class="brand-txt">mandobox</span></div>
+    <nav>
+      <div class="nav-group">
+        <div class="nav-label">Operate</div>
+        <button class="nav-item" data-view="sessions" aria-current="true">Sessions</button>
+        <button class="nav-item" data-view="vms">VMs</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Configure</div>
+        <button class="nav-item" data-view="models">Models</button>
+        <button class="nav-item" data-view="connectors">Connectors</button>
+        <button class="nav-item" data-view="config">Config</button>
+        <button class="nav-item" data-view="instructions">Instructions</button>
+        <button class="nav-item" data-view="tools">Tools</button>
+        <button class="nav-item" data-view="secrets">Secrets</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Monitor</div>
+        <button class="nav-item" data-view="costs">Costs</button>
+        <button class="nav-item" data-view="health">Health</button>
+      </div>
+    </nav>
+    <div class="sidebar-bottom">
+      <button id="nav-toggle" class="nav-toggle" title="Collapse / expand sidebar" aria-label="Toggle sidebar"><span class="nav-ico"></span><span class="nav-txt">Collapse</span></button>
+      <div class="sidebar-foot"><span class="status" id="conn"></span></div>
+    </div>
+  </aside>
+
+  <div class="content">
+  <main>
+  <!-- SESSIONS -->
+  <section id="view-sessions" class="view">
+    <div class="bar">
+      <h1>Sessions</h1>
+      <div class="bar-right">
+        <button id="new-session" class="btn btn-primary">+ New session</button>
+        <label class="chk"><input type="checkbox" id="autorefresh" checked> auto-refresh</label>
+        <button id="reload-sessions" class="btn">Reload</button>
+      </div>
+    </div>
+
+    <div id="sessions-body" class="panel"></div>
+
+    <!-- Connect to Agent: live activity feed + a prompt line -->
+    <div id="activity-panel" hidden>
+      <div class="activity-head">
+        <button id="activity-close" class="btn btn-sm">← Sessions</button>
+        <span id="activity-title" class="doc-title"></span>
+        <span id="activity-conn" class="badge"></span>
+        <label class="chk"><input type="checkbox" id="activity-follow" checked> follow</label>
+        <span class="activity-actions">
+          <button id="activity-attach" class="btn btn-sm" title="Bring up a browser VS Code tunnel into this VM">Attach VS Code</button>
+          <button id="activity-abort" class="btn btn-sm" title="Gracefully stop this session and tear down the VM">Abort</button>
+        </span>
+      </div>
+      <div id="activity-feed" class="activity-feed"></div>
+      <form id="activity-input" class="activity-input">
+        <span class="a-prompt">›</span>
+        <input id="activity-msg" type="text" autocomplete="off" spellcheck="false" placeholder="Send a message to the agent…">
+        <button type="submit" class="btn btn-primary btn-sm">Send</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- VMS -->
+  <section id="view-vms" class="view" hidden>
+    <div class="bar">
+      <h1>VMs</h1>
+      <div class="bar-right">
+        <label class="chk"><input type="checkbox" id="vms-autorefresh" checked> auto-refresh</label>
+        <button id="reload-vms" class="btn">Reload</button>
+      </div>
+    </div>
+    <p class="muted">Live microVMs. An <span class="badge badge-warn">orphan</span> has no Running workflow — the reconciler reaps it.</p>
+    <div id="vms-body" class="panel"></div>
+  </section>
+
+  <!-- MODELS -->
+  <section id="view-models" class="view" hidden>
+    <div class="bar">
+      <h1>Models</h1>
+      <div class="bar-right">
+        <span id="models-active" class="pill"></span>
+        <button id="reload-models" class="btn">Reload</button>
+      </div>
+    </div>
+    <p class="muted">One active provider runs everything — agent and helper calls alike. Switching applies to the next dispatch.</p>
+    <div id="prov-msg" class="msg" hidden></div>
+    <div id="prov-cards" class="prov-list"></div>
+  </section>
+
+  <!-- CONNECTORS -->
+  <section id="view-connectors" class="view" hidden>
+    <div class="bar">
+      <h1>Connectors</h1>
+      <div class="bar-right"><button id="reload-connectors" class="btn">Reload</button></div>
+    </div>
+    <p class="muted">Integrations the box talks to. Set up each one and its keys here; more (Linear, Jira, …) land on this page as they're added.</p>
+    <div id="conn-msg" class="msg" hidden></div>
+    <div id="conn-cards" class="prov-list"></div>
+  </section>
+
+  <!-- COSTS -->
+  <section id="view-costs" class="view" hidden>
+    <div class="bar">
+      <h1>Costs</h1>
+      <div class="bar-right"><button id="reload-costs" class="btn">Reload</button></div>
+    </div>
+    <p class="muted">Spend from archived per-session cost events. Subscription sessions show no per-token cost.</p>
+    <div id="costs-summary" class="tools-cards"></div>
+    <div id="costs-subnote" class="msg note" hidden></div>
+    <div class="split">
+      <div class="col"><div class="col-head">By repo</div><div id="costs-repo" class="panel scroll"></div></div>
+      <div class="col"><div class="col-head">By day</div><div id="costs-day" class="panel scroll"></div></div>
+    </div>
+    <div class="block"><div class="col-head">Most expensive sessions</div><div id="costs-top" class="panel"></div></div>
+  </section>
+
+  <!-- HEALTH -->
+  <section id="view-health" class="view" hidden>
+    <div class="bar">
+      <h1>Health</h1>
+      <div class="bar-right"><span id="health-summary" class="badge"></span><button id="reload-health" class="btn">Reload</button></div>
+    </div>
+    <div id="health-body"></div>
+  </section>
+
+  <!-- CONFIG -->
+  <section id="view-config" class="view" hidden>
+    <div class="bar">
+      <h1>Config</h1>
+      <div class="bar-right">
+        <span id="config-meta" class="muted"></span>
+        <button id="reload-config" class="btn">Reload</button>
+        <button id="save-config" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+    <p class="muted">Box defaults from <code>mandobox.yml</code> (resources, policy, per-repo rules). The LLM provider &amp; model live in <strong>Models</strong>.</p>
+    <div id="config-msg" class="msg" hidden></div>
+    <div id="config-help-bar" class="helpbar">
+      <span class="muted">Insert:</span>
+      <span id="config-snippets"></span>
+      <button id="config-load-example" class="btn btn-sm" title="Replace the editor with the fully-annotated example">Load example</button>
+    </div>
+    <div class="split">
+      <div class="col">
+        <div class="col-head">mandobox.yml</div>
+        <textarea id="config-editor" spellcheck="false" wrap="off"></textarea>
+      </div>
+      <div class="col">
+        <div class="col-head col-tabs">
+          <button class="subtab" data-pane="summary" aria-current="true">Resolved keys</button>
+          <button class="subtab" data-pane="reference">Reference</button>
+        </div>
+        <div id="config-summary" class="panel scroll" data-pane="summary"></div>
+        <div id="config-reference" class="panel scroll" data-pane="reference" hidden></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSTRUCTIONS -->
+  <section id="view-instructions" class="view" hidden>
+    <div class="bar">
+      <h1>Instructions</h1>
+      <div class="bar-right">
+        <span id="doc-dirty" class="dirty" hidden>● unsaved</span>
+        <button id="doc-revert" class="btn btn-sm">Revert</button>
+        <button id="doc-save" class="btn btn-primary btn-sm">Save</button>
+      </div>
+    </div>
+    <div id="instructions-msg" class="msg" hidden></div>
+    <div class="editor-layout">
+      <aside id="doc-rail" class="doc-rail"></aside>
+      <div class="doc-main">
+        <div class="doc-head">
+          <div class="doc-titlewrap">
+            <div id="doc-title" class="doc-title"></div>
+            <div id="doc-sub" class="muted"></div>
+          </div>
+          <div class="doc-tools">
+            <span id="doc-badge"></span>
+            <button id="doc-wrap" class="btn btn-sm" title="Toggle soft-wrap">Wrap: on</button>
+            <button id="doc-diff" class="btn btn-sm" hidden title="Compare your override to the built-in default">Diff</button>
+            <button id="doc-reset" class="btn btn-sm" hidden title="Clear the override and use the built-in default">Reset to default</button>
+          </div>
+        </div>
+        <div id="doc-note" class="doc-note"></div>
+        <div class="editor-wrap">
+          <textarea id="doc-editor" class="doc-editor" spellcheck="false"></textarea>
+          <div id="doc-diffview" class="diffview" hidden></div>
+        </div>
+        <div class="editor-status">
+          <span id="doc-meta" class="muted"></span>
+          <span id="doc-count" class="muted"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TOOLS -->
+  <section id="view-tools" class="view" hidden>
+    <div class="bar">
+      <h1>Tools</h1>
+      <div class="bar-right">
+        <span id="tools-image" class="muted"></span>
+        <button id="reload-tools" class="btn">Reload</button>
+      </div>
+    </div>
+    <p class="muted"><strong>Tools</strong> are the coding-agent CLIs baked into every VM image — the programs the agent actually runs inside its disposable computer (Claude Code, Codex). Update each independently; an update assembles a fresh golden image (~40s). Running VMs keep their pinned image — only new sessions use the update.</p>
+    <div id="tools-cards" class="tools-cards"></div>
+    <pre id="update-output" class="output" hidden></pre>
+
+    <div class="block">
+      <div class="col-head">Update history</div>
+      <div id="tools-audit" class="panel"></div>
+    </div>
+  </section>
+
+  <!-- SECRETS -->
+  <section id="view-secrets" class="view" hidden>
+    <div class="bar">
+      <h1>Secrets</h1>
+      <div class="bar-right">
+        <button id="reload-secrets" class="btn">Reload</button>
+      </div>
+    </div>
+    <div class="msg note">
+      Values are never shown — only a short sha256 <em>fingerprint</em> to confirm a change. Rotating writes the new value on the box and restarts the consuming service now; update your controller's Ansible <code>secrets/</code> too, or the next <code>deploy.yml</code> reverts it. Model keys (Anthropic, OpenAI, subscription token) are easier to set from <strong>Models</strong>, and integration keys (GitHub, Slack) from <strong>Connectors</strong> — this page is the raw fallback for everything.
+    </div>
+    <div id="secret-msg" class="msg" hidden></div>
+    <div id="secrets-body" class="panel"></div>
+  </section>
+  </main>
+  </div>
+</div>
+
+<!-- New session modal -->
+<div id="newsession-modal" class="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="New session">
+    <div class="modal-head">
+      <h2>New session</h2>
+      <button type="button" id="ns-x" class="modal-x" aria-label="Close">✕</button>
+    </div>
+    <form id="newsession-panel" class="newsession">
+      <div class="ns-row">
+        <label>Repo <input id="ns-repo" type="text" placeholder="owner/name" autocomplete="off" required></label>
+        <label>Base branch <input id="ns-base" type="text" placeholder="main" autocomplete="off"></label>
+      </div>
+      <label class="ns-task">Task
+        <textarea id="ns-prompt" placeholder="What should the agent do? It'll open a PR." required></textarea>
+      </label>
+      <div class="ns-row">
+        <label>Keep-alive <input id="ns-keepalive" type="text" placeholder="(config default, e.g. 30m)" autocomplete="off"></label>
+      </div>
+      <div id="ns-msg" class="msg" hidden></div>
+      <div class="ns-actions">
+        <button type="submit" class="btn btn-primary">Dispatch</button>
+        <button type="button" id="ns-cancel" class="btn">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

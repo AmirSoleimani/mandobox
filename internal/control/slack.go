@@ -51,7 +51,9 @@ func (a *Activities) PostSlack(ctx context.Context, p PostSlackParams) (PostSlac
 	if p.Channel == "" {
 		p.Channel = a.SlackChannel
 	}
-	body := map[string]any{"channel": p.Channel, "text": p.Text}
+	// No link previews — the thread carries a lot of URLs (PRs, tunnel links) and unfurled cards are
+	// noise the operator didn't ask for.
+	body := map[string]any{"channel": p.Channel, "text": p.Text, "unfurl_links": false, "unfurl_media": false}
 	if p.ThreadTS != "" {
 		body["thread_ts"] = p.ThreadTS
 	}

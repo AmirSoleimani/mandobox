@@ -1,7 +1,7 @@
 ---
-- name: Check the fleet-gateway binary exists on the controller
+- name: Check the mando-gateway binary exists on the controller
   ansible.builtin.stat:
-    path: "{{ egress_gateway_dist_dir }}/fleet-gateway"
+    path: "{{ egress_gateway_dist_dir }}/mando-gateway"
   delegate_to: localhost
   run_once: true
   become: false
@@ -11,7 +11,7 @@
   ansible.builtin.assert:
     that:
       - egress_gateway_bin_stat.stat.exists
-    fail_msg: "Missing {{ egress_gateway_dist_dir }}/fleet-gateway. Run `make dist` first."
+    fail_msg: "Missing {{ egress_gateway_dist_dir }}/mando-gateway. Run `make dist` first."
   run_once: true
 
 - name: Check the upstream key exists on the controller
@@ -39,14 +39,14 @@
     group: root
     mode: "0750"
 
-- name: Install the fleet-gateway binary
+- name: Install the mando-gateway binary
   ansible.builtin.copy:
-    src: "{{ egress_gateway_dist_dir }}/fleet-gateway"
+    src: "{{ egress_gateway_dist_dir }}/mando-gateway"
     dest: "{{ egress_gateway_bin }}"
     owner: root
     group: root
     mode: "0755"
-  notify: Restart fleet-gateway
+  notify: Restart mando-gateway
 
 - name: Install the upstream key
   ansible.builtin.copy:
@@ -55,7 +55,7 @@
     owner: root
     group: root
     mode: "0600"
-  notify: Restart fleet-gateway
+  notify: Restart mando-gateway
 
 - name: Install the CONNECT allowlist
   ansible.builtin.copy:
@@ -65,24 +65,24 @@
     group: root
     mode: "0644"
   when: egress_gateway_allowlist | length > 0
-  notify: Restart fleet-gateway
+  notify: Restart mando-gateway
 
-- name: Install the fleet-gateway unit
+- name: Install the mando-gateway unit
   ansible.builtin.template:
-    src: fleet-gateway.service.j2
-    dest: /etc/systemd/system/fleet-gateway.service
+    src: mando-gateway.service.j2
+    dest: /etc/systemd/system/mando-gateway.service
     owner: root
     group: root
     mode: "0644"
   notify:
     - Reload systemd daemon (egress-gateway)
-    - Restart fleet-gateway
+    - Restart mando-gateway
 
 - name: Apply unit changes before enabling
   ansible.builtin.meta: flush_handlers
 
-- name: Enable and start fleet-gateway
+- name: Enable and start mando-gateway
   ansible.builtin.systemd_service:
-    name: fleet-gateway
+    name: mando-gateway
     enabled: true
     state: started
