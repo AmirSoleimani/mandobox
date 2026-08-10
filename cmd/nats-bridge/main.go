@@ -1,7 +1,7 @@
 // Command nats-bridge subscribes to the guest NATS streams and persists them to durable
-// per-session storage (PLAN §6.3: log lines go to storage, not through workflow history).
+// per-session storage (log lines go to storage, not through workflow history).
 // The workflow learns terminal outcomes via RunAgentPhase; this process is the archival +
-// observability path. Slack forwarding is layered on in M5.
+// observability path. Slack forwarding is layered on later.
 package main
 
 import (

@@ -1,10 +1,10 @@
 // Package supervisor implements fc-supervisor, the guest's PID 1. It reads its boot
 // configuration and per-session credentials from MMDS, runs Claude Code against the target
-// repo behind a host-side LLM gateway, and reports progress over NATS (PLAN §8).
+// repo behind a host-side LLM gateway, and reports progress over NATS.
 //
 // Trust: everything here runs inside the untrusted guest. The only credentials present are
-// per-session Tier-1 tokens delivered via MMDS; no real key is ever here (I1), and
-// ANTHROPIC_API_KEY is never set (I9).
+// per-session Tier-1 tokens delivered via MMDS; no real key is ever here, and
+// ANTHROPIC_API_KEY is never set.
 package supervisor
 
 import (
@@ -61,7 +61,7 @@ type VSCodeConfig struct {
 	Hostname    string `json:"hostname,omitempty"`
 }
 
-// NetworkConfig is the point-to-point link mando-agent allocated (§8.1: configure eth0
+// NetworkConfig is the point-to-point link mando-agent allocated (configure eth0
 // statically, no DHCP).
 type NetworkConfig struct {
 	Tap       string `json:"tap"`
@@ -75,7 +75,7 @@ type NetworkConfig struct {
 // RepoConfig identifies the repository to work on.
 type RepoConfig struct {
 	Slug       string `json:"slug"`      // owner/name
-	CloneURL   string `json:"clone_url"` // https clone URL (no embedded token — §9)
+	CloneURL   string `json:"clone_url"` // https clone URL (no embedded token)
 	BaseBranch string `json:"base_branch"`
 	// HeadBranch is the agent branch to push/PR, chosen by the control plane (a task-derived name).
 	// Empty → fall back to the session-derived default (see Branch).
@@ -91,7 +91,7 @@ type TaskConfig struct {
 }
 
 // LLMConfig points Claude Code at the host-side gateway. AuthToken is a per-session bearer
-// token the gateway swaps for the real key (§4.5, §10).
+// token the gateway swaps for the real key.
 type LLMConfig struct {
 	BaseURL   string `json:"base_url"`
 	AuthToken string `json:"auth_token"`
@@ -104,7 +104,7 @@ type GitHubConfig struct {
 	BotEmail string `json:"bot_email"`
 }
 
-// NATSConfig is the control-plane transport (§4.4). Creds is a session-scoped JWT.
+// NATSConfig is the control-plane transport. Creds is a session-scoped JWT.
 type NATSConfig struct {
 	URL   string `json:"url"`
 	Creds string `json:"creds"`
@@ -161,7 +161,7 @@ func (c BootConfig) validate() error {
 }
 
 // Branch returns the git branch the agent pushes to: the control plane's task-derived head_branch
-// when set, else the session-derived default agent/<session_id> (§5).
+// when set, else the session-derived default agent/<session_id>.
 func (c BootConfig) Branch() string {
 	if b := strings.TrimSpace(c.Repo.HeadBranch); b != "" {
 		return b

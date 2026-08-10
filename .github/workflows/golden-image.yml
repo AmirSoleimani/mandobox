@@ -1,6 +1,6 @@
 name: golden-image
 
-# Build the content-addressed golden guest image (PLAN §7.2, M3). Publishes it as a workflow
+# Build the content-addressed golden guest image. Publishes it as a workflow
 # artifact; wire the optional object-storage step below to your R2/S3 bucket for production.
 on:
   workflow_dispatch:
@@ -37,7 +37,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-      # Optional: publish to object storage so the fleet host can pull it (PLAN §7.2).
+      # Optional: publish to object storage so the fleet host can pull it.
       # Enable by setting the R2/S3 secrets, then uncomment:
       # - name: Publish to object storage
       #   env:

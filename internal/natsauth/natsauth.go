@@ -1,6 +1,6 @@
 // Package natsauth implements NATS decentralized (JWT) auth for the fleet control bus, so each guest
 // is confined to its OWN subject subtree (agent.<session_id>.>) and cannot read, inject, or forge on
-// any other session's streams (PLAN §9 Tier-1 scoping; closes the "unauthenticated NATS" audit
+// any other session's streams (Tier-1 scoping; closes the "unauthenticated NATS" audit
 // finding). One operator → one account (with a signing key) → users:
 //
 //   - a static SERVICE user (agent.>) for the worker + nats-bridge, generated once at provision time;

@@ -31,7 +31,7 @@ type Deps struct {
 
 // Supervisor runs the guest-side lifecycle after bootstrap (network + MMDS + transport are
 // established by the caller). It mounts the workspace, runs the agent, and turns the result
-// into a PR (initial) or a push (resume) — PLAN §8.1.
+// into a PR (initial) or a push (resume).
 type Supervisor struct {
 	cfg          BootConfig
 	deps         Deps
@@ -93,7 +93,7 @@ func New(cfg BootConfig, deps Deps, workspaceDir string) *Supervisor {
 }
 
 // Run executes the lifecycle: one turn per round, staying warm between rounds so a follow-up
-// message is handled without a cold relaunch (§6.1 keep-alive, §8.3). It publishes one event
+// message is handled without a cold relaunch (keep-alive). It publishes one event
 // per turn (pr_opened / push_done / agent_failed) and a session_idle event when it parks.
 func (s *Supervisor) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
@@ -242,7 +242,7 @@ func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool) 
 		return s.failf(err, "git_diff")
 	}
 	if !changed {
-		// A no-op turn is a legitimate outcome, not a crash (§13) — it's usually the agent
+		// A no-op turn is a legitimate outcome, not a crash — it's usually the agent
 		// answering a question rather than editing. Carry its words so the thread stays a
 		// conversation, not a bare "no changes".
 		s.deps.Log.Info("agent produced no changes")
@@ -296,7 +296,7 @@ func (s *Supervisor) startHeartbeat(ctx context.Context) {
 }
 
 // subscribeCommands queues user_message and wakes the keep-alive loop to handle it at the next
-// turn boundary; abort cancels the run (§8.3). `claude -p` is not interactive, so a message
+// turn boundary; abort cancels the run. `claude -p` is not interactive, so a message
 // cannot be injected mid-turn — messages that arrive during a turn are handled together next.
 func (s *Supervisor) subscribeCommands(cancel context.CancelFunc, wake chan<- struct{}) {
 	err := s.deps.Bus.OnCommand(func(c Command) {
@@ -331,7 +331,7 @@ func (s *Supervisor) subscribeCommands(cancel context.CancelFunc, wake chan<- st
 }
 
 // linkClaudeHome symlinks ~/.claude to the workspace so Claude Code's transcript persists,
-// which is what makes --resume work in a fresh VM days later (§8.1 — the load-bearing line).
+// which is what makes --resume work in a fresh VM days later (the load-bearing line).
 func (s *Supervisor) linkClaudeHome() error {
 	target := filepath.Join(s.workspaceDir, ".claude")
 	if err := os.MkdirAll(target, 0o700); err != nil {
@@ -444,7 +444,7 @@ func (s *Supervisor) prBody(res Result) string {
 }
 
 // autonomousPreamble prefixes every task: the agent runs headless with no human to answer
-// questions, so it must make reasonable assumptions and finish rather than ask (§8.3). It must
+// questions, so it must make reasonable assumptions and finish rather than ask. It must
 // NOT run git or gh itself — the supervisor commits, pushes, and opens/updates the PR after the
 // agent finishes (finalize). If the agent commits, `git status` is clean and the supervisor
 // sees no diff, so the work is never pushed.
@@ -512,7 +512,7 @@ const collaboratePreamble = "You are collaborating on an open pull request with 
 	"you. " + artifactHygiene + " " + selfReview + " Your final message is posted straight back to " +
 	"the reviewer as your reply, so address them directly.\n\n"
 
-// resumePrompt assembles a resume turn from the reviewer's messages (§8.2).
+// resumePrompt assembles a resume turn from the reviewer's messages.
 func resumePrompt(preamble string, instructions, queued []string) string {
 	var b strings.Builder
 	b.WriteString(preamble)

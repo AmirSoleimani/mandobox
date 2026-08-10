@@ -15,7 +15,7 @@ import (
 )
 
 // Server exposes the mando-agent HTTP API. It is mTLS-only in production; the control plane
-// initiates every call (PLAN §7.1). The service is thin: it validates, delegates to the
+// initiates every call. The service is thin: it validates, delegates to the
 // Manager, and maps errors to status codes.
 type Server struct {
 	mgr *Manager
@@ -30,7 +30,7 @@ func NewServer(mgr *Manager, log *slog.Logger) *Server {
 	return &Server{mgr: mgr, log: log}
 }
 
-// apiLaunchRequest mirrors POST /vms (PLAN §7.1).
+// apiLaunchRequest mirrors POST /vms.
 type apiLaunchRequest struct {
 	SessionID        string         `json:"session_id"`
 	ImageSHA         string         `json:"image_sha"`
@@ -85,7 +85,7 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
 	})
 	switch {
 	case errors.Is(err, ErrAtCapacity):
-		// Retryable: the LaunchVM activity backs off (PLAN §7.1, EX_TEMPFAIL semantics).
+		// Retryable: the LaunchVM activity backs off (EX_TEMPFAIL semantics).
 		s.fail(w, http.StatusServiceUnavailable, "at capacity")
 		return
 	case errors.Is(err, ErrForbiddenMMDS):
@@ -146,7 +146,7 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 }
 
 // LoadServerTLS builds a TLS config that requires and verifies a client certificate signed
-// by the given CA (mTLS, PLAN §7.1). The control plane presents its client cert on every call.
+// by the given CA (mTLS). The control plane presents its client cert on every call.
 func LoadServerTLS(certFile, keyFile, clientCAFile string) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {

@@ -14,7 +14,7 @@ type linuxPlatform struct{}
 
 func newPlatform() Platform { return linuxPlatform{} }
 
-// MountBaseFilesystems mounts the pseudo-filesystems PID 1 needs (§8.1). /dev may already be
+// MountBaseFilesystems mounts the pseudo-filesystems PID 1 needs. /dev may already be
 // a devtmpfs the kernel mounted; EBUSY there is not an error.
 func (linuxPlatform) MountBaseFilesystems() error {
 	mounts := []struct {

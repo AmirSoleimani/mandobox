@@ -13,7 +13,7 @@ import (
 	"github.com/acme/mandobox/internal/reconcile"
 )
 
-// FleetClient talks to mando-agent's mTLS HTTP API (PLAN §7.2). It adds Launch (POST /vms) on
+// FleetClient talks to mando-agent's mTLS HTTP API. It adds Launch (POST /vms) on
 // top of the List/Destroy already in internal/reconcile, reusing that package's TLS loader.
 type FleetClient struct {
 	base  string
@@ -21,7 +21,7 @@ type FleetClient struct {
 }
 
 // launchRequest mirrors fleetagent.apiLaunchRequest (server.go). MMDS carries the BootConfig
-// minus network/session_id, which mando-agent fills in (I9 forbids anthropic_api_key here).
+// minus network/session_id, which mando-agent fills in (a trust-boundary invariant forbids the anthropic_api_key here).
 type launchRequest struct {
 	SessionID        string         `json:"session_id"`
 	ImageSHA         string         `json:"image_sha"`
@@ -78,7 +78,7 @@ func (c *FleetClient) Launch(ctx context.Context, req launchRequest) (LaunchResu
 	return out, nil
 }
 
-// Destroy deletes a VM; purgeWorkspace also discards the persistent volume (§7.2, §7.6).
+// Destroy deletes a VM; purgeWorkspace also discards the persistent volume.
 // VMRecord is one running VM as returned by GET /vms. The reconcile activity needs the session and
 // its start time; other fields the agent returns are ignored here.
 type VMRecord struct {

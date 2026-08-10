@@ -8,9 +8,9 @@ import (
 )
 
 // Transport carries messages between the guest and the control plane. It is an interface so
-// the NATS implementation can later be swapped for vsock without touching the supervisor
-// (PLAN §4.4). The supervisor refuses to run if a transport can't be established: no
-// transport means no observability and no abort channel (§8.1).
+// the NATS implementation can later be swapped for vsock without touching the supervisor.
+// The supervisor refuses to run if a transport can't be established: no
+// transport means no observability and no abort channel.
 type Transport interface {
 	Publish(subject string, data []byte) error
 	Subscribe(subject string, handler func([]byte)) error
@@ -18,9 +18,9 @@ type Transport interface {
 	Close() error
 }
 
-// Bus wraps a Transport with the per-session subject scheme agent.<session_id>.* (§5).
+// Bus wraps a Transport with the per-session subject scheme agent.<session_id>.*.
 // Only state transitions become events (→ Temporal signals); log lines go to storage and
-// Slack directly and must not become signals (§6.3).
+// Slack directly and must not become signals.
 type Bus struct {
 	t   Transport
 	sid session.ID
@@ -34,7 +34,7 @@ func (b *Bus) subj(leaf string) string { return b.sid.SubjectPrefix() + "." + le
 // Log republishes a raw agent stream-json line to agent.<sid>.log (fire-and-forget).
 func (b *Bus) Log(line []byte) error { return b.t.Publish(b.subj("log"), line) }
 
-// Heartbeat signals liveness to the control plane (§7.6/§7.7 consume this).
+// Heartbeat signals liveness to the control plane.
 func (b *Bus) Heartbeat() error { return b.t.Publish(b.subj("heartbeat"), []byte("{}")) }
 
 // Event publishes a state transition and flushes so delivery is assured before the
@@ -63,13 +63,13 @@ func (b *Bus) OnCommand(handler func(Command)) error {
 // Close releases the transport.
 func (b *Bus) Close() error { return b.t.Close() }
 
-// Event types published by the guest (→ Temporal signals, §6.1).
+// Event types published by the guest (→ Temporal signals).
 const (
 	EventPROpened    = "pr_opened"
 	EventPushDone    = "push_done"
 	EventAgentFailed = "agent_failed"
 	EventNeedsInput  = "needs_input"
-	EventSessionIdle = "session_idle" // the warm VM idled out and is powering off (§6.1 keep-alive)
+	EventSessionIdle = "session_idle" // the warm VM idled out and is powering off (keep-alive)
 	EventTunnel      = "tunnel"       // human attach: `code tunnel` output (login prompt + URL) — Info
 	EventDetached    = "detached"     // human attach ended: the working-tree status — Info
 )
@@ -89,7 +89,7 @@ type Event struct {
 	Info      string  `json:"info,omitempty"` // tunnel output (EventTunnel) or tree status (EventDetached)
 }
 
-// Command types delivered to the guest (§8.3).
+// Command types delivered to the guest.
 const (
 	CommandUserMessage = "user_message"
 	CommandAbort       = "abort"

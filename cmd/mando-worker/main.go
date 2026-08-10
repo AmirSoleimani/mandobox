@@ -1,4 +1,4 @@
-// Command mando-worker hosts the Temporal PRWorkflow and its activities (PLAN §6). It runs on
+// Command mando-worker hosts the Temporal PRWorkflow and its activities. It runs on
 // the fleet host: it dials Temporal (localhost), reaches mando-agent over mTLS, mints GitHub
 // App tokens, and talks to guests over NATS. Tier-0 secrets (the App private key) stay here.
 package main

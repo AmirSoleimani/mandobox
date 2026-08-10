@@ -41,7 +41,7 @@ func (s *ReconcileWorkflowSuite) Test_ReapsEachOrphan() {
 	s.ElementsMatch([]string{"s_AAA", "s_BBB"}, res.Reaped)
 	s.Len(destroyed, 2)
 	for _, p := range destroyed {
-		s.False(p.PurgeWorkspace, "reconcile must keep the workspace volume (I7)")
+		s.False(p.PurgeWorkspace, "reconcile must keep the workspace volume")
 	}
 }
 

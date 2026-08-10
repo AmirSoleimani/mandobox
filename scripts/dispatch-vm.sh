@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# dispatch-vm.sh — hand-dispatch one agent VM by POSTing a launch to mando-agent (M3).
+# dispatch-vm.sh — hand-dispatch one agent VM by POSTing a launch to mando-agent.
 #
-# This is the manual stand-in for M4's Temporal workflow: it generates a session_id, builds
+# This is the manual stand-in for the Temporal workflow: it generates a session_id, builds
 # the MMDS payload, and calls mando-agent over mTLS. mando-agent adds the network block and
 # boots the VM; fc-supervisor runs Claude Code and opens the PR.
 #
 # The GitHub token must be a real installation token (contents:write + pull_requests:write,
-# single repo). Until M4's credential minter exists, mint one by hand from the App.
+# single repo). Until the credential minter exists, mint one by hand from the App.
 set -euo pipefail
 
 need() { [ -n "${!1:-}" ] || { echo "dispatch: \$$1 is required" >&2; exit 2; }; }
@@ -30,7 +30,7 @@ MEM_MIB="${MEM_MIB:-4096}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-5}"
 GITHUB_BOT_USER="${GITHUB_BOT_USER:-mando-agent[bot]}"
 GITHUB_BOT_EMAIL="${GITHUB_BOT_EMAIL:-mando-agent[bot]@users.noreply.github.com}"
-NATS_CREDS="${NATS_CREDS:-}" # empty for M3 no-auth NATS
+NATS_CREDS="${NATS_CREDS:-}" # empty for no-auth NATS
 
 # Derive owner/name from the clone URL if not given.
 REPO_SLUG="${REPO_SLUG:-$(printf '%s' "$REPO_CLONE_URL" | sed -E 's#^https?://[^/]+/##; s/\.git$//')}"

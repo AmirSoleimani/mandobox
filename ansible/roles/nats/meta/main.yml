@@ -1,7 +1,7 @@
 ---
 galaxy_info:
   author: Chelodo
-  description: Deploy a NATS server on the control plane (M3 minimal; JWT scoping in M4).
+  description: Deploy a NATS server on the control plane (minimal; per-session JWT scoping added later).
   license: MIT
   min_ansible_version: "2.15"
   platforms:

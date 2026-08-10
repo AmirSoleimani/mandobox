@@ -15,7 +15,7 @@ const codexBin = "codex"
 // CodexRunner runs OpenAI's Codex CLI (`codex exec`) as the coding agent — the second AgentRunner,
 // proving the harness seam (docs/configuration.md). It points Codex at the host LLM gateway's
 // OpenAI-compatible endpoint (the gateway injects the real key host-side, so no key ever lives in the
-// guest — I9), captures its output as the turn's reply, and leaves commit/push/PR to the supervisor's
+// guest), captures its output as the turn's reply, and leaves commit/push/PR to the supervisor's
 // finalizeTurn — identical to Claude, since that machinery is harness-agnostic.
 //
 // UNVERIFIED against a live Codex CLI (needs an OpenAI key on the box). Two spots to confirm on the
@@ -86,7 +86,7 @@ func codexArgs(spec AgentSpec) []string {
 // codexEnv points Codex at the host gateway's OpenAI-compatible endpoint. It strips any inherited LLM
 // key, then sets OPENAI_API_KEY to the per-session token — which is safe (unlike Claude's dangerous
 // ANTHROPIC_API_KEY): the gateway swaps this token for the real key host-side, so no real credential
-// ever reaches the agent (I9).
+// ever reaches the agent.
 func codexEnv(base []string, spec AgentSpec) []string {
 	out := make([]string, 0, len(base)+6)
 	for _, e := range base {

@@ -24,7 +24,7 @@
     create_home: false
     password_lock: true
 
-# Persistent layout (I7): only workspaces survive a VM; images/kernels are
+# Persistent layout: only workspaces survive a VM; images/kernels are
 # reconstructible content-addressed caches.
 - name: Create persistent directory layout
   ansible.builtin.file:

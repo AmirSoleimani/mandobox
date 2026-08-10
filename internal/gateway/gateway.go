@@ -1,11 +1,11 @@
-// Package gateway is the fleet host's egress proxy (PLAN §7.5, §10): the ONLY path out of a
+// Package gateway is the fleet host's egress proxy: the ONLY path out of a
 // guest for LLM and git/registry traffic. It injects the real Anthropic key so the guest
-// holds only a per-session bearer token (I1), enforces a domain allowlist on tunnelled
+// holds only a per-session bearer token, enforces a domain allowlist on tunnelled
 // traffic, and scrubs the real key from responses. It is not a boundary on its own — the
-// allowlist is a speed bump, not a wall (§4.5) — but combined with nftables it is the seam
+// allowlist is a speed bump, not a wall — but combined with nftables it is the seam
 // where credentials are added.
 //
-// One port serves both roles (§10): CONNECT requests are the HTTPS_PROXY forward path;
+// One port serves both roles: CONNECT requests are the HTTPS_PROXY forward path;
 // everything else is the ANTHROPIC_BASE_URL reverse proxy to Anthropic.
 package gateway
 
@@ -31,11 +31,11 @@ const maxScrubBytes = 32 << 20 // 32 MiB
 
 // Config configures the gateway.
 type Config struct {
-	// UpstreamBaseURL is the LLM upstream — LiteLLM (http://127.0.0.1:4000) since M5, or the
+	// UpstreamBaseURL is the LLM upstream — LiteLLM (http://127.0.0.1:4000), or the
 	// Anthropic API directly (https://api.anthropic.com) for the single-model path.
 	UpstreamBaseURL string
 	// UpstreamKey is the credential injected host-side toward the upstream — the LiteLLM master
-	// key, or the real Anthropic key — never present in a guest (I1).
+	// key, or the real Anthropic key — never present in a guest.
 	UpstreamKey string
 	// UpstreamKeyHeader is the header the upstream key is injected under. Default "X-Api-Key"
 	// (Anthropic). LiteLLM's unambiguous proxy-auth header is "x-litellm-api-key".
@@ -46,7 +46,7 @@ type Config struct {
 	// Mode selects the egress policy: ModeStrict (default) only permits CONNECT to Allowlist
 	// hosts; ModeOpen permits any host but still logs every one, so the gateway stays the single
 	// audited chokepoint (nftables forces all egress through it either way). ModeOpen trades
-	// exfil-prevention for zero-maintenance coverage — right for trusted repos (§4.5).
+	// exfil-prevention for zero-maintenance coverage — right for trusted repos.
 	Mode string
 	Log  *slog.Logger
 }
@@ -91,7 +91,7 @@ func New(cfg Config) (*Gateway, error) {
 		Director:       g.director,
 		ModifyResponse: g.scrubResponse,
 		ErrorLog:       slog.NewLogLogger(cfg.Log.Handler(), slog.LevelWarn),
-		FlushInterval:  -1, // flush SSE frames immediately (Claude Code streams) (§10)
+		FlushInterval:  -1, // flush SSE frames immediately (Claude Code streams)
 	}
 	return g, nil
 }
@@ -140,7 +140,7 @@ func inferenceAllowed(r *http.Request) bool {
 }
 
 // director rewrites the outbound request onto the upstream and swaps the guest's session token
-// for the real upstream credential (§4.5).
+// for the real upstream credential.
 func (g *Gateway) director(r *http.Request) {
 	r.URL.Scheme = g.upstream.Scheme
 	r.URL.Host = g.upstream.Host
@@ -156,8 +156,8 @@ func (g *Gateway) director(r *http.Request) {
 	}
 }
 
-// scrubResponse removes the real key from responses before they reach the guest (§7.5,
-// transcript leakage §9). Streaming bodies are left intact except for buffered small bodies.
+// scrubResponse removes the real key from responses before they reach the guest (guards
+// against transcript leakage). Streaming bodies are left intact except for buffered small bodies.
 func (g *Gateway) scrubResponse(resp *http.Response) error {
 	// Only scrub non-streaming bodies; SSE streams are passed through (the key is never in a
 	// model response body, this guards against accidental echoes in errors).
@@ -300,7 +300,7 @@ func sessionToken(r *http.Request) string {
 
 // DefaultAllowlist is a curated set of mainstream git hosts and package registries — enough to
 // build/test the large majority of real repos in ModeStrict without per-repo tuning. Extend it
-// (or the -allowlist-file) for private/niche registries, or run ModeOpen for trusted repos (§7.5).
+// (or the -allowlist-file) for private/niche registries, or run ModeOpen for trusted repos.
 // A "." prefix matches the domain and all subdomains.
 func DefaultAllowlist() []string {
 	return []string{

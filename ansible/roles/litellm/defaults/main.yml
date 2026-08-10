@@ -1,8 +1,8 @@
 ---
-# LiteLLM proxy (PLAN §10): the model-routing layer between the egress gateway and the LLM
+# LiteLLM proxy: the model-routing layer between the egress gateway and the LLM
 # providers. Native (pip venv, no Docker), no database — a static model_list + master key only.
 # It holds the real provider key(s); the guest never does, and now neither does the gateway
-# (which injects only the LiteLLM master key) — one more hop from the guest (I1).
+# (which injects only the LiteLLM master key) — one more hop from the guest.
 litellm_venv: /opt/litellm/venv
 litellm_conf_dir: /etc/litellm
 litellm_user: litellm

@@ -41,7 +41,7 @@ type Session struct {
 	CostUSD     float64 `json:"cost_usd,omitempty"`
 	ImageSHA    string  `json:"image_sha,omitempty"`
 	Live        bool    `json:"live"`  // true if the status query answered (State fields are populated)
-	Stuck       bool    `json:"stuck"` // Running but its status query failed — likely a wedged workflow task
+	Stuck       bool    `json:"stuck"` // Running but its status query failed — likely a stalled workflow task
 	// How the agent ran, from the durable per-session meta the worker writes at launch (meta.go).
 	// Survives the workflow closing, so a finished session still shows what it used.
 	Model        string `json:"model,omitempty"`

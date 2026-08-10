@@ -1,7 +1,7 @@
 ---
 galaxy_info:
   author: Chelodo
-  description: Native LiteLLM proxy for model routing between the egress gateway and providers (M5, §10).
+  description: Native LiteLLM proxy for model routing between the egress gateway and providers.
   license: MIT
   min_ansible_version: "2.15"
   platforms:

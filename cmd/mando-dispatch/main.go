@@ -1,5 +1,5 @@
-// Command mando-dispatch starts one PRWorkflow — the M4 replacement for scripts/dispatch-vm.sh.
-// It generates a session_id (also the workflow ID, §5) and hands the task to Temporal, which
+// Command mando-dispatch starts one PRWorkflow — the replacement for scripts/dispatch-vm.sh.
+// It generates a session_id (also the workflow ID) and hands the task to Temporal, which
 // mints credentials, launches the VM, and drives the review loop. Run it on the fleet host (or
 // anywhere that can reach the Temporal frontend).
 package main

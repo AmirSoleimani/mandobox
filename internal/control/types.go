@@ -1,6 +1,6 @@
 // Package control is the Temporal control plane: the PRWorkflow that owns a task from dispatch
 // through the human review loop to workspace teardown, plus the activities that reach the
-// mando-agent (mTLS) and NATS. Policy lives here and nowhere else (PLAN §6, invariant I6).
+// mando-agent (mTLS) and NATS. Policy lives here and nowhere else — a core trust-boundary invariant.
 package control
 
 import "time"
@@ -21,7 +21,7 @@ const (
 	SignalDetach          = "detach" // operator is done — stop the tunnel
 )
 
-// Search-attribute keys (registered on the `fleet` namespace by the temporal role, PLAN §11).
+// Search-attribute keys (registered on the `fleet` namespace by the temporal role).
 const (
 	SARepo        = "repo"
 	SAPRNumber    = "pr_number"
@@ -29,7 +29,7 @@ const (
 	SASlackThread = "slack_thread" // thread_ts → workflow, so slack-gateway routes replies
 )
 
-// Policy knobs — workflow input, baked nowhere else (PLAN §6.1). Defaults applied in the
+// Policy knobs — workflow input, baked nowhere else. Defaults applied in the
 // workflow when zero-valued so a caller can pass an empty Policy.
 type Policy struct {
 	MaxReviewRounds int           `json:"max_review_rounds"`
@@ -49,16 +49,16 @@ func (p Policy) withDefaults() Policy {
 	}
 	if p.HardTTL == 0 {
 		// The workflow lives as long as the PR: merge/close ends it via webhook; this is only the
-		// backstop that reaps a workflow for an abandoned PR (§6.1).
+		// backstop that reaps a workflow for an abandoned PR.
 		p.HardTTL = 14 * 24 * time.Hour
 	}
 	if p.ReviewDebounce == 0 {
 		// A short coalescing window, not the old 90s debounce: with a warm VM we deliver almost
-		// immediately, only batching a rapid-fire burst into one turn (§6.1 keep-alive).
+		// immediately, only batching a rapid-fire burst into one turn (keep-alive).
 		p.ReviewDebounce = 5 * time.Second
 	}
 	if p.KeepAlive == 0 {
-		// Generous warm window so an active back-and-forth stays warm (plan's keep_alive_threshold).
+		// Generous warm window so an active back-and-forth stays warm (the design's keep_alive_threshold).
 		// A negative KeepAlive is the "never park" sentinel (keep the VM warm for the PR's life,
 		// still bounded by HardTTL) — left untouched here; only the unset (0) case gets the default.
 		p.KeepAlive = 15 * time.Minute
@@ -67,9 +67,9 @@ func (p Policy) withDefaults() Policy {
 }
 
 // WorkflowInput is the dispatch payload: everything needed to launch the first VM. Credentials
-// are NOT here — they are minted per-phase by the MintCredentials activity (I1, §9).
+// are NOT here — they are minted per-phase by the MintCredentials activity.
 type WorkflowInput struct {
-	SessionID  string `json:"session_id"` // also the workflow ID (§5)
+	SessionID  string `json:"session_id"` // also the workflow ID
 	Repo       string `json:"repo"`       // owner/name
 	CloneURL   string `json:"clone_url"`
 	BaseBranch string `json:"base_branch"`
@@ -88,7 +88,7 @@ type WorkflowInput struct {
 	SlackChannel string `json:"slack_channel"`
 }
 
-// State is the queryable workflow state block (PLAN §6.1). Returned by the `status` query.
+// State is the queryable workflow state block. Returned by the `status` query.
 type State struct {
 	SessionID           string   `json:"session_id"`
 	Repo                string   `json:"repo"`
@@ -119,7 +119,7 @@ const (
 // ---- signal payloads (from webhook-rx / Slack) ----
 
 // ReviewCommentSignal / ReviewSubmittedSignal / PRClosedSignal / CIStatusSignal all carry a
-// GitHub delivery ID; the workflow dedupes on it (§6.2 — GitHub redelivers).
+// GitHub delivery ID; the workflow dedupes on it (GitHub redelivers).
 type ReviewCommentSignal struct {
 	Body       string `json:"body"`
 	Author     string `json:"author"`
@@ -171,7 +171,7 @@ type DetachSignal struct {
 
 // ---- activity I/O ----
 
-// Credentials are the Tier-1, per-session tokens the guest holds (I1, §9). The Anthropic key
+// Credentials are the Tier-1, per-session tokens the guest holds. The Anthropic key
 // is NEVER here — the egress gateway injects it host-side; the guest gets a session token.
 type Credentials struct {
 	GitHubToken       string `json:"github_token"`
@@ -183,7 +183,7 @@ type Credentials struct {
 	VSCodeTunnelToken string `json:"vscode_tunnel_token,omitempty"`
 	// VSCodeTunnelHostname is the hostname the tunnel token was minted under. The VS Code CLI
 	// binds its stored auth to the hostname, so the guest must adopt this exact name or `code
-	// tunnel` treats itself as logged out and falls back to the device login (§remote-attach).
+	// tunnel` treats itself as logged out and falls back to the device login.
 	VSCodeTunnelHostname string `json:"vscode_tunnel_hostname,omitempty"`
 }
 
@@ -233,7 +233,7 @@ type PhaseResult struct {
 	Tokens    int     `json:"tokens"`
 }
 
-// DeliverParams publishes a command to a running guest over NATS (§8.3).
+// DeliverParams publishes a command to a running guest over NATS.
 type DeliverParams struct {
 	SessionID string `json:"session_id"`
 	Type      string `json:"type"` // supervisor.CommandUserMessage | CommandAbort

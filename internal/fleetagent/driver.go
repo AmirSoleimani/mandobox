@@ -31,6 +31,6 @@ type LaunchResult struct {
 type VMDriver interface {
 	Launch(ctx context.Context, spec LaunchSpec) (LaunchResult, error)
 	// Destroy stops the VM process and removes its ephemeral chroot. It must NOT touch the
-	// persistent workspace volume (PLAN §7.6, I7).
+	// persistent workspace volume.
 	Destroy(ctx context.Context, rec VMRecord) error
 }

@@ -26,7 +26,7 @@ type Authority interface {
 // FindOrphans returns the sessions whose VMs are unexpected (no live workflow) and older than the
 // grace period. Grace exempts a just-launched VM whose workflow hasn't yet surfaced in Temporal's
 // visibility (eventual consistency), so it isn't reaped mid-registration. Reaping keeps the
-// workspace volume (a PR may still reference it, I7) — that is the caller's DestroyVM choice; this
+// workspace volume (a PR may still reference it) — that is the caller's DestroyVM choice; this
 // only identifies the orphans.
 func FindOrphans(actual []VM, expected map[session.ID]struct{}, grace time.Duration, now time.Time) []session.ID {
 	nowUnix := now.Unix()

@@ -5,7 +5,7 @@ import "github.com/acme/mandobox/internal/supervisor"
 // buildMMDS assembles the mando-agent mmds_payload from launch params. It sets everything the
 // guest's BootConfig.validate() requires except `network` and `session_id`, which mando-agent
 // injects at launch (see manager.mergeMMDS). The real Anthropic key is never included — the
-// guest gets a per-session LLM auth token routed through the egress gateway (I1, I9, §9).
+// guest gets a per-session LLM auth token routed through the egress gateway.
 func buildMMDS(p LaunchParams) map[string]any {
 	task := map[string]any{"mode": p.Mode}
 	if p.Mode == supervisor.ModeResume {

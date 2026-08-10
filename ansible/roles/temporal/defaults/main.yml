@@ -17,7 +17,7 @@ temporal_data_dir: /var/lib/fleet/temporal
 temporal_namespace: fleet
 temporal_namespace_retention: 720h
 
-# Custom search attributes (PLAN §11) — the review-round count is the metric that matters.
+# Custom search attributes — the review-round count is the metric that matters.
 temporal_search_attributes:
   - {name: repo, type: Keyword}
   - {name: pr_number, type: Int}

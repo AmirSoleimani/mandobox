@@ -36,11 +36,11 @@ func prNumberFromURL(url string) int {
 
 // defaultTokenPath is the tmpfs file the git credential helper reads. Keeping the token here
 // (not in the remote URL or an environment variable) is what lets a refresh update every
-// subsequent git operation with no process restart (PLAN §9).
+// subsequent git operation with no process restart.
 const defaultTokenPath = "/run/gh/token"
 
 // Git drives the repository operations the supervisor performs (the agent edits files; the
-// supervisor commits, pushes, and opens the PR — §8.1).
+// supervisor commits, pushes, and opens the PR).
 type Git struct {
 	runner    Runner
 	cfg       BootConfig
@@ -55,7 +55,7 @@ func NewGit(runner Runner, cfg BootConfig, repoDir, fleetDir string) *Git {
 }
 
 // helperScript is the script git invokes for every operation. It reads the current token
-// from disk, so rotating the token is a file write (§9).
+// from disk, so rotating the token is a file write.
 func (g *Git) helperScript() string {
 	return "#!/bin/sh\n" +
 		`[ "$1" = "get" ] || exit 0` + "\n" +
@@ -64,7 +64,7 @@ func (g *Git) helperScript() string {
 }
 
 // SetupCredentials installs the credential helper and the bot identity. The token is never
-// placed in the clone URL or an env var (§9).
+// placed in the clone URL or an env var.
 func (g *Git) SetupCredentials(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(g.tokenPath), 0o700); err != nil {
 		return fmt.Errorf("git creds: mkdir token dir: %w", err)
@@ -103,13 +103,13 @@ func (g *Git) SetupCredentials(ctx context.Context) error {
 }
 
 // RefreshToken rewrites the token file; subsequent git operations pick it up with no
-// restart (§9). Used by the T-10min refresh path.
+// restart. Used by the T-10min refresh path.
 func (g *Git) RefreshToken(token string) error {
 	return os.WriteFile(g.tokenPath, []byte(token), 0o600)
 }
 
 // Prepare gets the repo onto the agent branch: clone + branch on the initial run, or
-// fetch + checkout on a resume (the workspace, and thus the clone, persists — I7).
+// fetch + checkout on a resume (the workspace, and thus the clone, persists).
 func (g *Git) Prepare(ctx context.Context) error {
 	branch := g.cfg.Branch()
 	if _, err := os.Stat(filepath.Join(g.repoDir, ".git")); err == nil {
@@ -151,7 +151,7 @@ func (g *Git) PendingDiff(ctx context.Context) (summary, patch string, changed b
 }
 
 // Commit stages and commits all changes. It reports changed=false when the agent produced
-// no diff — a legitimate outcome that must not look like a failure (§13).
+// no diff — a legitimate outcome that must not look like a failure.
 func (g *Git) Commit(ctx context.Context, message string) (sha string, changed bool, err error) {
 	status, err := g.output(ctx, "status", "--porcelain")
 	if err != nil {
@@ -174,13 +174,13 @@ func (g *Git) Commit(ctx context.Context, message string) (sha string, changed b
 }
 
 // Push publishes the agent branch. Agents can only push to agent/* — main is protected by
-// GitHub, not by us (I4).
+// GitHub, not by us.
 func (g *Git) Push(ctx context.Context) error {
 	return g.git(ctx, "push", "-u", "origin", g.cfg.Branch())
 }
 
 // OpenPR creates the pull request via gh, passing the token only in this invocation's
-// environment (§9). Returns the PR number and URL.
+// environment. Returns the PR number and URL.
 func (g *Git) OpenPR(ctx context.Context, title, body string) (int, string, error) {
 	out, err := g.runner.OutputEnv(ctx, g.ghEnv(), "gh", "pr", "create",
 		"--repo", g.cfg.Repo.Slug,

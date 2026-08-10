@@ -11,14 +11,14 @@ import (
 // natsCredsPath is where a session NATS creds file is written (tmpfs in the guest).
 const natsCredsPath = "/run/fleet-nats.creds"
 
-// NATSTransport is the production Transport over NATS (§4.4).
+// NATSTransport is the production Transport over NATS.
 type NATSTransport struct {
 	nc *nats.Conn
 }
 
 // DialNATS connects to the control-plane NATS. creds, when non-empty, is a NATS user creds
 // file (JWT + seed) written to tmpfs and used for auth; the guest holds only this
-// session-scoped credential (Tier-1, §9).
+// session-scoped credential (Tier-1).
 func DialNATS(url, creds string) (*NATSTransport, error) {
 	opts := []nats.Option{
 		nats.Name("fc-supervisor"),

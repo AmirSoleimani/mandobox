@@ -111,7 +111,7 @@ func (s *temporalStore) attach(ctx context.Context, workflowID string) error {
 	return nil
 }
 
-// terminate force-stops a workflow (for a wedged one that can't process a graceful abort). Unlike
+// terminate force-stops a workflow (for a stalled one that can't process a graceful abort). Unlike
 // abort, this bypasses workflow code — use it only on genuinely stuck sessions.
 func (s *temporalStore) terminate(ctx context.Context, workflowID, reason string) error {
 	c, err := s.conn()
@@ -164,7 +164,7 @@ func (s *temporalStore) sessions(ctx context.Context) ([]Session, error) {
 	// Enrich open workflows with live State; closed ones keep visibility-only data.
 	s.enrich(ctx, c, out)
 
-	// A Running workflow whose status query didn't answer is likely wedged (a failed workflow task,
+	// A Running workflow whose status query didn't answer is likely stalled (a failed workflow task,
 	// e.g. a nondeterminism replay error) — flag it so the UI can offer to terminate it.
 	for i := range out {
 		out[i].Stuck = out[i].Status == "Running" && !out[i].Live

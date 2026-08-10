@@ -12,7 +12,7 @@ networking_dns_upstreams:
   - "1.1.1.1"
   - "9.9.9.9"
 
-# CNI plugin binaries. The default datapath is direct taps + nftables (§7.1/§7.4); these
+# CNI plugin binaries. The default datapath is direct taps + nftables; these
 # are installed as an available dependency, not on the datapath. Set false to skip.
 networking_install_cni: true
 networking_cni_version: "1.9.1"

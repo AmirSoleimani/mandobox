@@ -9,7 +9,7 @@ import (
 )
 
 // Queue is the mid-task steering queue. `claude -p` is not interactive, so incoming
-// user_message payloads are held and applied on the next --resume (PLAN §8.3). It is
+// user_message payloads are held and applied on the next --resume. It is
 // persisted on the workspace volume, not in memory, so a VM crash does not eat an
 // instruction. Each message is stored as one JSON-encoded line to survive embedded newlines.
 type Queue struct {

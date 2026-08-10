@@ -14,7 +14,7 @@ fleet_group: fleet
 fleet_uid: 2000
 fleet_gid: 2000
 
-# --- Directory layout (PLAN §7, I7) ---------------------------------------------
+# --- Directory layout ---------------------------------------------
 # Only workspaces survive a VM; everything else is reconstructible from git + image sha.
 fleet_root_dir: /var/lib/fleet
 fleet_images_dir: "{{ fleet_root_dir }}/images" # golden rootfs cache (content-addressed, RO)
@@ -22,27 +22,27 @@ fleet_workspaces_dir: "{{ fleet_root_dir }}/workspaces" # persistent per-session
 fleet_kernels_dir: "{{ fleet_root_dir }}/kernels" # guest kernels (vmlinux-<ver>)
 fleet_jail_dir: /srv/jailer # jailer chroot base (jailer default)
 fleet_run_dir: /run/fleet # runtime state (tmpfs; cleared on reboot)
-fleet_vm_state_dir: "{{ fleet_run_dir }}/vms" # per-VM state dirs written by mando-agent (M2)
+fleet_vm_state_dir: "{{ fleet_run_dir }}/vms" # per-VM state dirs written by mando-agent
 
-# --- Network addressing (PLAN §7.4) ---------------------------------------------
-# Per-VM tap devices, point-to-point, no shared bridge (I2/I3). mando-agent creates
-# taps named "<prefix><n>" at launch (M2); the nftables policy matches the tap class.
+# --- Network addressing ---------------------------------------------
+# Per-VM tap devices, point-to-point, no shared bridge. mando-agent creates
+# taps named "<prefix><n>" at launch; the nftables policy matches the tap class.
 fleet_guest_iface_prefix: tap
 
-# Supernet mando-agent carves per-VM /30s from (M2). Single source of truth: the nftables
+# Supernet mando-agent carves per-VM /30s from. Single source of truth: the nftables
 # masquerade rule and the mando-agent -guest-subnet flag both derive from this.
 fleet_guest_subnet: "172.16.0.0/12"
 
-# mando-agent mTLS API port (M2). The control plane reaches it; guests must not.
+# mando-agent mTLS API port. The control plane reaches it; guests must not.
 fleet_agent_port: 9443
 
-# Stable host-side service anchor reachable from every guest. The egress proxy (§7.5)
+# Stable host-side service anchor reachable from every guest. The egress proxy
 # and the host resolver bind here; guests route to it via their tap gateway.
 fleet_host_gw_addr: 172.31.0.1
 fleet_host_gw_prefixlen: 32
 
 # Egress proxy (mcp-guardian + LiteLLM) — deployed in a later milestone; the nftables
-# policy permits guests to reach this host:port now so the path exists (§10).
+# policy permits guests to reach this host:port now so the path exists.
 fleet_egress_proxy_port: 8080
 
 # NATS. Single-machine build: NATS runs on THIS host, bound to the anchor, so guests reach
@@ -54,6 +54,6 @@ fleet_nats_port: 4222
 fleet_mmds_addr: 169.254.169.254
 
 # Guest→host ports explicitly dropped and counted (default-DROP already covers them;
-# the named rules make injection attempts visible in counters). PLAN §7.4. 9443 is the
-# mando-agent mTLS API (M2) — reachable from the control plane, never from a guest.
+# the named rules make injection attempts visible in counters). 9443 is the
+# mando-agent mTLS API — reachable from the control plane, never from a guest.
 fleet_blocked_host_ports: [22, 2375, 2376, 4222, 7233, 9090, 9443]

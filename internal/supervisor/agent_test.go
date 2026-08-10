@@ -18,7 +18,7 @@ func TestAgentEnvStripsAnthropicAPIKey(t *testing.T) {
 	}
 	for _, e := range env {
 		if strings.HasPrefix(strings.ToUpper(e), "ANTHROPIC_API_KEY=") {
-			t.Fatalf("I9 violation: ANTHROPIC_API_KEY leaked into agent env: %q", e)
+			t.Fatalf("security-invariant violation: ANTHROPIC_API_KEY leaked into agent env: %q", e)
 		}
 	}
 	want := []string{

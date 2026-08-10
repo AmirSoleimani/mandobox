@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Slack outbound (PLAN §6.4): one thread per session. PostSlack starts the thread and replies
+// Slack outbound: one thread per session. PostSlack starts the thread and replies
 // to it; UpdateSlack edits a posted message. These run as Temporal activities. Inbound (the
 // /fleet command, thread replies, needs_input answers) is handled by cmd/slack-gateway over
 // Socket Mode. If no bot token is configured the activities are graceful no-ops, so a task

@@ -10,11 +10,11 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// maxSeenDeliveries bounds the dedupe set kept in workflow state (§6.2). GitHub redelivers,
+// maxSeenDeliveries bounds the dedupe set kept in workflow state. GitHub redelivers,
 // so we drop already-seen delivery IDs; the set is trimmed FIFO to keep history small.
 const maxSeenDeliveries = 500
 
-// PRWorkflow owns one task from dispatch through the human review loop to teardown (§6.1).
+// PRWorkflow owns one task from dispatch through the human review loop to teardown.
 // It is deterministic: all I/O is in activities, all outside input arrives as signals.
 func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	in.Policy = in.Policy.withDefaults()
@@ -38,7 +38,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 
 	// Give the branch a meaningful, task-derived name (git best practice) — agent/<slug>-<id-tail> —
 	// instead of agent/<session_id>. Version-gated so a workflow recorded before this shipped keeps
-	// its original branch and its PR reconcile still matches (§6.2 GetVersion). The guest is told the
+	// its original branch and its PR reconcile still matches (GetVersion). The guest is told the
 	// same branch via MMDS (repo.head_branch), so both sides push/reconcile the same ref.
 	if workflow.GetVersion(ctx, "meaningful-branch", workflow.DefaultVersion, 1) >= 1 {
 		var a *Activities
@@ -54,7 +54,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 
 	// Resolve the effective config: the repo's .mandobox.yml folded with the box defaults/limits and
 	// this task's overrides, clamped (docs/configuration.md). Version-gated so an in-flight workflow
-	// keeps its already-applied input and doesn't diverge on replay (§6.2 GetVersion).
+	// keeps its already-applied input and doesn't diverge on replay (GetVersion).
 	if workflow.GetVersion(ctx, "repo-config", workflow.DefaultVersion, 1) >= 1 {
 		var a *Activities
 		var rc ResolvedConfig
@@ -72,7 +72,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 		}
 	}
 
-	// Hard TTL bounds the whole workflow (D2).
+	// Hard TTL bounds the whole workflow.
 	ttl := workflow.NewTimer(ctx, in.Policy.HardTTL)
 
 	// Initial phase: mint → launch → run, and keep the VM warm for the review that follows.
@@ -81,7 +81,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 
 	// Read the no-PR-waits-for-input version gate before deciding how to report the initial turn (so
 	// it sits above reportPhase and the command order is stable). A workflow recorded before this
-	// shipped returns DefaultVersion and replays its original reporting + teardown (§6.2 GetVersion).
+	// shipped returns DefaultVersion and replays its original reporting + teardown (GetVersion).
 	noPRWaitVersion := workflow.GetVersion(ctx, "no-pr-wait-for-input", workflow.DefaultVersion, 1)
 
 	// A benign no-op first turn (it changed nothing, so no PR) usually means the operator deferred the
@@ -95,7 +95,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 
 	// The pr_opened event travels over NATS (at-most-once); if it was lost — e.g. the run went
 	// quiet and RunAgentPhase gave up while the guest went on to open the PR — reconcile with
-	// GitHub so a real PR is never mistaken for "no PR" (§6).
+	// GitHub so a real PR is never mistaken for "no PR".
 	if st.PRNumber == 0 {
 		reconcilePR(ctx, st)
 	}
@@ -173,12 +173,12 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	// re-feeds them (and a webhook retry doesn't double-deliver). reconcileVersion gates the whole
 	// reconcile feature: introducing it via GetVersion means an in-flight workflow (recorded before
 	// this code shipped) replays its original behavior, while new workflows get the reconcile — so a
-	// worker redeploy never wedges a live PR (PLAN §6.2; the alternative, a short TTL, is D2).
+	// worker redeploy never stalls a live PR (the alternative — a short TTL — was rejected).
 	seenComments := map[int64]bool{}
 	reconcileVersion := workflow.GetVersion(ctx, "pr-thread-reconcile", workflow.DefaultVersion, 1)
 	// editAckVersion gates the specific "taking care of your changes" ack for a detach-decision reply
 	// (vs the generic whimsical ack). Version-gated so a live session that already handled an
-	// edit-decision under the old code replays its original acks and a redeploy never wedges it.
+	// edit-decision under the old code replays its original acks and a redeploy never stalls it.
 	editAckVersion := workflow.GetVersion(ctx, "edit-decision-ack", workflow.DefaultVersion, 1)
 
 	armKeepAlive()
@@ -230,7 +230,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 			if s.ReviewID != 0 {
 				seenComments[s.ReviewID] = true
 			}
-			// Only changes_requested drives another round; approvals/comments don't (§6.1).
+			// Only changes_requested drives another round; approvals/comments don't.
 			if s.State == "changes_requested" {
 				st.PendingInstructions = append(st.PendingInstructions,
 					fmt.Sprintf("[GitHub review by @%s] requested changes: %s", s.Author, s.Body))
@@ -260,7 +260,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 			if dedupe(s.DeliveryID) {
 				return
 			}
-			closed, merged = true, s.Merged // merged vs abandoned discriminator (§6.2)
+			closed, merged = true, s.Merged // merged vs abandoned discriminator
 		})
 		sel.AddReceive(abort, func(c workflow.ReceiveChannel, _ bool) {
 			var s AbortSignal
@@ -293,7 +293,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 
 		sel.Select(ctx)
 
-		// Route a natural-language reply by intent — no rigid commands (§remote-attach). The `/mando`
+		// Route a natural-language reply by intent — no rigid commands. The `/mando`
 		// slash commands remain as an explicit fallback (they arrive on attachCh/detachCh).
 		if gotUserMsg && !closed && !aborted {
 			// The operator's own words carry the intent; any attached file is content, folded into the
@@ -466,7 +466,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	return *st, nil
 }
 
-// ---- Slack thread rendering (§6.4). All best-effort: a Slack failure never fails the task. ----
+// ---- Slack thread rendering. All best-effort: a Slack failure never fails the task. ----
 
 func postRoot(ctx workflow.Context, st *State, in WorkflowInput) {
 	var a *Activities
@@ -476,7 +476,7 @@ func postRoot(ctx workflow.Context, st *State, in WorkflowInput) {
 	if err := workflow.ExecuteActivity(slackCtx(ctx), a.PostSlack,
 		PostSlackParams{Channel: in.SlackChannel, Text: text}).Get(ctx, &r); err == nil && r.TS != "" {
 		st.SlackThreadTS, st.SlackChannel = r.TS, r.Channel
-		// So slack-gateway can route thread replies back to this workflow (§6.4).
+		// So slack-gateway can route thread replies back to this workflow.
 		_ = workflow.UpsertTypedSearchAttributes(ctx,
 			temporal.NewSearchAttributeKeyKeyword(SASlackThread).ValueSet(r.TS))
 	}
@@ -499,7 +499,7 @@ func slackNote(ctx workflow.Context, st *State, text string) {
 }
 
 // reportPhase renders a turn as conversation: the agent's own words, plus a small footer noting
-// a PR/push when it actually changed code (§6.4). This is what makes a reply feel answered — a
+// a PR/push when it actually changed code. This is what makes a reply feel answered — a
 // question gets an explanation, a change gets a summary — rather than a bare "no changes".
 func reportPhase(ctx workflow.Context, st *State, res PhaseResult, fromPR bool) {
 	reply := toSlackMrkdwn(strings.TrimSpace(res.Reply)) // agent emits GH-Markdown; Slack needs mrkdwn
@@ -599,7 +599,7 @@ func shortSHA(s string) string {
 	return s
 }
 
-// launchWarm mints → launches (cold) → runs the first turn, and leaves the VM WARM (§6.1). The
+// launchWarm mints → launches (cold) → runs the first turn, and leaves the VM WARM. The
 // guest stays up handling follow-ups until it idles out or the workflow tears it down.
 func launchWarm(ctx workflow.Context, in WorkflowInput, st *State, mode string, instructions []string) PhaseResult {
 	var a *Activities // nil receiver: used only for type-safe activity references
@@ -625,7 +625,7 @@ func launchWarm(ctx workflow.Context, in WorkflowInput, st *State, mode string, 
 }
 
 // warmTurn delivers the batched messages to the already-running guest and awaits the resulting
-// turn — no relaunch, no checkout, no debounce (§6.1 keep-alive).
+// turn — no relaunch, no checkout, no debounce (keep-alive).
 func warmTurn(ctx workflow.Context, in WorkflowInput, st *State, texts []string) PhaseResult {
 	for _, t := range texts {
 		deliver(ctx, in, supervisor.CommandUserMessage, t, "")
@@ -665,7 +665,7 @@ func teardownVM(ctx workflow.Context, st *State) {
 	st.VMState = vmDestroyed
 }
 
-// destroyWorkspace discards the persistent volume at end-of-life (§7.6).
+// destroyWorkspace discards the persistent volume at end-of-life.
 func destroyWorkspace(ctx workflow.Context, st *State) {
 	var a *Activities
 	_ = workflow.ExecuteActivity(destroyCtx(ctx), a.DestroyVM,
@@ -695,7 +695,7 @@ var ackEmoji = []string{
 }
 
 // ackFeedback posts the instant, state-aware "I heard you" so a spin-up delay never looks like
-// silence (§6.4). It doesn't presume a code change (the reply may just be a question); the agent's
+// silence. It doesn't presume a code change (the reply may just be a question); the agent's
 // actual response follows. n rotates the flavor word so it isn't the same phrase every time.
 func ackFeedback(ctx workflow.Context, st *State, n int) {
 	msg := fmt.Sprintf("%s %s…", ackEmoji[n%len(ackEmoji)], ackWords[n%len(ackWords)])
@@ -740,7 +740,7 @@ func githubCommentInstruction(s ReviewCommentSignal) string {
 
 // reconcileThread pulls the PR's full conversation from GitHub and folds in any human comment the
 // workflow hasn't delivered yet — the safety net for a dropped webhook, so the agent acts on the
-// complete thread every turn (§6.2). Best-effort: a GitHub failure just leaves webhooks as the
+// complete thread every turn. Best-effort: a GitHub failure just leaves webhooks as the
 // only delivery path. Marks each folded-in item seen and points the reply at the newest inline
 // comment being caught up on.
 func reconcileThread(ctx workflow.Context, st *State, seen map[int64]bool, fromPR *bool, replyToID *int64) {
@@ -804,7 +804,7 @@ func postPRReply(ctx workflow.Context, st *State, reply string, replyToID int64)
 }
 
 // startRelay launches RelayTunnel, which streams the human-attach tunnel's output to the Slack
-// thread and resolves when the guest reports it detached (§remote-attach).
+// thread and resolves when the guest reports it detached.
 func startRelay(ctx workflow.Context, in WorkflowInput, st *State) workflow.Future {
 	var a *Activities
 	return workflow.ExecuteActivity(relayCtx(ctx), a.RelayTunnel,
@@ -838,7 +838,7 @@ func classifyIntent(ctx workflow.Context, in WorkflowInput, msg string) string {
 	return intent
 }
 
-// ---- per-activity option contexts (retry + timeout tuned per PLAN §6.1) ----
+// ---- per-activity option contexts (retry + timeout tuned per activity) ----
 
 func mintCtx(ctx workflow.Context) workflow.Context {
 	return workflow.WithActivityOptions(ctx, workflow.ActivityOptions{

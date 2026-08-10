@@ -31,7 +31,7 @@ func TestStateStoreRoundTrip(t *testing.T) {
 		t.Fatalf("Get = %+v, want %+v", got, rec)
 	}
 
-	// Flat files the reaper reads (PLAN §7.6).
+	// Flat files the reaper reads.
 	for name, want := range map[string]string{
 		"firecracker.pid": "4242\n",
 		"started_at":      "1700000000\n",

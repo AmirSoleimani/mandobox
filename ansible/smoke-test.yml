@@ -1,5 +1,5 @@
 ---
-# M1 acceptance smoke test (PLAN §14): boot a throwaway microVM and observe userspace.
+# The acceptance smoke test: boot a throwaway microVM and observe userspace.
 # Run after site.yml:  ansible-playbook smoke-test.yml
 - name: Smoke test — boot a throwaway microVM
   hosts: fleet

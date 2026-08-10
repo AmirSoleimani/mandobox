@@ -1,8 +1,8 @@
 ---
-# The Temporal control-plane services (M4): mando-worker (PRWorkflow + activities), webhook-rx
+# The Temporal control-plane services: mando-worker (PRWorkflow + activities), webhook-rx
 # (GitHub webhooks → signals), nats-bridge (guest stream archival). They run on the fleet host
 # alongside Temporal and mando-agent. Tier-0 secrets (the GitHub App key, webhook secret) live
-# here and never enter a guest (§9).
+# here and never enter a guest.
 control_plane_dist_dir: "{{ playbook_dir }}/../bin"
 control_plane_conf_dir: /etc/fleet
 control_plane_tls_dir: /etc/fleet/tls # installed by the fleet_agent role

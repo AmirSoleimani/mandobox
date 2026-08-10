@@ -75,7 +75,7 @@ func GenerateCommitMessage(ctx context.Context, baseURL, authToken, model, reque
 	if err != nil {
 		return ""
 	}
-	req.Header.Set("Authorization", "Bearer "+authToken) // mirrors ANTHROPIC_AUTH_TOKEN (I9)
+	req.Header.Set("Authorization", "Bearer "+authToken) // mirrors ANTHROPIC_AUTH_TOKEN
 	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("content-type", "application/json")
 

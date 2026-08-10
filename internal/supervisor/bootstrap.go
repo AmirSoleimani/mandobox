@@ -11,7 +11,7 @@ const mmdsIP = "169.254.169.254"
 // Bootstrap performs the steps that must happen before the guest knows its own network:
 // mount the pseudo-filesystems, bring eth0 up, add a link-local route to MMDS, then read and
 // parse the boot config. The full static network is configured afterwards from the returned
-// config (PLAN §8.1).
+// config.
 func Bootstrap(ctx context.Context, platform Platform, runner Runner, mmdsBase string) (BootConfig, error) {
 	if err := platform.MountBaseFilesystems(); err != nil {
 		return BootConfig{}, fmt.Errorf("bootstrap: mount base filesystems: %w", err)

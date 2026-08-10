@@ -72,7 +72,7 @@ func TestLaunchSuccess(t *testing.T) {
 	if !fr.ran("ip tuntap add dev " + id.TapName()) {
 		t.Error("tap was not created")
 	}
-	// MMDS must carry the allocated network and the session_id (§8.1).
+	// MMDS must carry the allocated network and the session_id.
 	if fd.lastSpec.MMDS["session_id"] != id.String() {
 		t.Error("MMDS missing session_id")
 	}

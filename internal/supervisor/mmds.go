@@ -15,7 +15,7 @@ const mmdsAddr = "http://169.254.169.254"
 // MMDSClient reads the guest metadata service using MMDS V2: obtain a session token, then
 // GET the tree with it. V2's token requirement blocks casual SSRF-shaped reads; it does not
 // change the threat model — anything in the guest can still read MMDS, so everything in it
-// expires within an hour (PLAN §9).
+// expires within an hour.
 type MMDSClient struct {
 	base   string
 	http   *http.Client
