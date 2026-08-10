@@ -28,7 +28,7 @@
       - egress_gateway_key_stat.stat.exists
     fail_msg: >-
       No upstream key at {{ egress_gateway_key_src }} (the LiteLLM master key by default —
-      generate with `openssl rand`). It is Tier-0 and must never enter a guest (§9).
+      generate with `openssl rand`). It is Tier-0 and must never enter a guest.
   run_once: true
 
 - name: Create the gateway config directory

@@ -123,11 +123,11 @@ echo "build: install toolchain in rootfs"
 chroot "$ROOTFS" /bin/bash /tmp/install.sh
 rm -f "$ROOTFS/tmp/install.sh"
 
-# fc-supervisor as PID 1 (§8.1). No systemd/sshd/cron/dbus/cloud-init in a minbase rootfs.
+# fc-supervisor as PID 1. No systemd/sshd/cron/dbus/cloud-init in a minbase rootfs.
 install -m 0755 "$SUPERVISOR_BIN" "$ROOTFS/sbin/fc-supervisor"
 ln -sf /sbin/fc-supervisor "$ROOTFS/sbin/init"
 
-# Set env for module caches on the workspace volume (§7.2).
+# Set env for module caches on the workspace volume.
 cat >>"$ROOTFS/etc/environment" <<'ENVV'
 GOMODCACHE=/workspace/.cache/go/mod
 GOCACHE=/workspace/.cache/go/build

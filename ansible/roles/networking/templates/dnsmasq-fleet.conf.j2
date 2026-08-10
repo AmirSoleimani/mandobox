@@ -1,6 +1,6 @@
 # {{ ansible_managed }}
-# Host resolver for guests (PLAN §7.4). DNS only — no DHCP; guests configure eth0
-# statically (§8.1). Bound to the anchor address so it is never exposed on the host's
+# Host resolver for guests. DNS only — no DHCP; guests configure eth0
+# statically. Bound to the anchor address so it is never exposed on the host's
 # public interface.
 interface={{ networking_anchor_iface }}
 bind-dynamic

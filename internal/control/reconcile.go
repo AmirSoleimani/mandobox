@@ -68,7 +68,7 @@ func (a *Activities) FindOrphanVMs(ctx context.Context) (OrphanResult, error) {
 }
 
 // ReconcileWorkflow is the scheduled reaper. Each run finds orphan VMs and destroys each via the
-// same DestroyVM activity the PRWorkflow uses (keeping the workspace volume, I7). Running on the
+// same DestroyVM activity the PRWorkflow uses (keeping the workspace volume). Running on the
 // worker, it inherits Temporal's durability, retries, and visibility — every pass and every reap is
 // in Temporal history, and a failed pass surfaces there rather than in a separate service's logs.
 func ReconcileWorkflow(ctx workflow.Context) (ReconcileResult, error) {
@@ -92,7 +92,7 @@ func ReconcileWorkflow(ctx workflow.Context) (ReconcileResult, error) {
 	})
 	var res ReconcileResult
 	for _, sid := range found.Orphans {
-		// Keep the workspace volume (a PR may still reference it, I7); only the VM is unexpected.
+		// Keep the workspace volume (a PR may still reference it); only the VM is unexpected.
 		if err := workflow.ExecuteActivity(destroyCtx, a.DestroyVM, DestroyParams{SessionID: sid}).Get(ctx, nil); err != nil {
 			log.Error("reconcile: reap failed", "session_id", sid, "err", err)
 			continue

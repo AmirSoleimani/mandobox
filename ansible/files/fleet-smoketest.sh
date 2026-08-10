@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fleet-smoketest — M1 acceptance (PLAN §14): boot a throwaway Firecracker microVM on
+# fleet-smoketest — the acceptance smoke test: boot a throwaway Firecracker microVM on
 # the installed Firecracker + guest kernel and confirm it reaches userspace.
 #
 # It builds a minimal busybox initramfs whose /init prints a unique marker to the serial

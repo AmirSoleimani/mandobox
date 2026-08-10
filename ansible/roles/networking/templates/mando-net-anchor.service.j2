@@ -1,6 +1,6 @@
 # {{ ansible_managed }}
 # Host network anchor: a dummy interface carrying the stable service address that guests
-# reach for DNS and the egress proxy (PLAN §7.4).
+# reach for DNS and the egress proxy.
 [Unit]
 Description=Fleet host network anchor ({{ networking_anchor_iface }})
 After=network-pre.target

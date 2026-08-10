@@ -14,7 +14,7 @@ type Runner interface {
 	Run(ctx context.Context, name string, args ...string) error
 	Output(ctx context.Context, name string, args ...string) (string, error)
 	// RunEnv runs with extra environment entries appended (e.g. GH_TOKEN scoped to a single
-	// gh invocation, never the global/agent environment — §9).
+	// gh invocation, never the global/agent environment).
 	RunEnv(ctx context.Context, env []string, name string, args ...string) error
 	// OutputEnv captures stdout with extra environment entries appended.
 	OutputEnv(ctx context.Context, env []string, name string, args ...string) (string, error)

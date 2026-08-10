@@ -1,5 +1,5 @@
 // Command webhook-rx receives GitHub webhooks and translates PR-lifecycle events into Temporal
-// signals (PLAN §6.2). It verifies the HMAC signature, extracts the repo + PR number, finds the
+// signals. It verifies the HMAC signature, extracts the repo + PR number, finds the
 // owning PRWorkflow by search attributes, and signals it. Dedupe/debounce live in the workflow;
 // this process is deliberately dumb — it translates, it does not decide.
 package main

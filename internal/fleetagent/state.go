@@ -16,9 +16,9 @@ import (
 var ErrNotFound = errors.New("vm state not found")
 
 // VMRecord is the authoritative per-VM state mando-agent maintains under
-// RunStateDir/<session_id>/. It is the reaper's and reconciler's view of a live VM
-// (PLAN §7.6, §7.7). The directory lives on tmpfs, so a host reboot clears it while the
-// workspace volume (real state, I7) survives elsewhere.
+// RunStateDir/<session_id>/. It is the reaper's and reconciler's view of a live VM.
+// The directory lives on tmpfs, so a host reboot clears it while the
+// workspace volume (real state) survives elsewhere.
 type VMRecord struct {
 	Session   session.ID `json:"session_id"`
 	ImageSHA  string     `json:"image_sha"`
@@ -63,7 +63,7 @@ func (s *StateStore) Put(rec VMRecord) error {
 	if err := writeFileAtomic(filepath.Join(dir, "vm.json"), append(data, '\n'), 0o640); err != nil {
 		return err
 	}
-	// Flat files for the reaper (PLAN §7.6).
+	// Flat files for the reaper.
 	if err := writeFileAtomic(filepath.Join(dir, "firecracker.pid"), []byte(strconv.Itoa(rec.PID)+"\n"), 0o640); err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func (s *StateStore) List() ([]VMRecord, error) {
 }
 
 // Delete removes the runtime state directory for id. It never touches the workspace
-// volume — that lives under WorkspacesDir and may back an open PR (PLAN §7.6, I7).
+// volume — that lives under WorkspacesDir and may back an open PR.
 func (s *StateStore) Delete(id session.ID) error {
 	if err := os.RemoveAll(s.Dir(id)); err != nil {
 		return fmt.Errorf("delete: %w", err)

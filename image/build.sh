@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build.sh — build the content-addressed golden guest image (PLAN §7.2).
+# build.sh — build the content-addressed golden guest image.
 #
 # docker build -> docker export (rootfs tar) -> mke2fs -d (ext4, no privileged loop mount)
 # -> zstd. The artifact is rootfs-<sha256-of-ext4>.ext4.zst; fleet-agent decompresses it to
@@ -10,7 +10,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/dist/images}"
-SIZE_MB="${SIZE_MB:-2048}" # target 1–2GB (§7.2)
+SIZE_MB="${SIZE_MB:-2048}" # target 1–2GB
 IMAGE_TAG="fleet-golden:build"
 EXPORT_NAME="fleet-golden-export-$$"
 

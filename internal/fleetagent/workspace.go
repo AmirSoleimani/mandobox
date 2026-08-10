@@ -16,7 +16,7 @@ import (
 var imageSHAPattern = regexp.MustCompile(`^[0-9a-f]{16,64}$`)
 
 // Workspace manages the persistent per-session volume and the golden rootfs it boots from.
-// The workspace is the only mutable state that survives a VM (PLAN §7.2, I7).
+// The workspace is the only mutable state that survives a VM.
 type Workspace struct {
 	cfg    Config
 	runner Runner
@@ -33,8 +33,8 @@ func (w *Workspace) Path(id session.ID) string {
 }
 
 // Ensure returns the workspace path, creating and formatting an ext4 volume on first use
-// and reusing it thereafter (this is what makes a fresh VM resume an existing session —
-// §8.1). created reports whether it was freshly made.
+// and reusing it thereafter (this is what makes a fresh VM resume an existing session).
+// created reports whether it was freshly made.
 func (w *Workspace) Ensure(ctx context.Context, id session.ID, sizeMiB int) (path string, created bool, err error) {
 	if !id.Valid() {
 		return "", false, fmt.Errorf("ensure workspace: invalid session_id %q", id)
@@ -64,7 +64,7 @@ func (w *Workspace) Ensure(ctx context.Context, id session.ID, sizeMiB int) (pat
 
 // Destroy discards the workspace's blocks and unlinks it. Discarding (punch-hole) before
 // unlink limits how long a secret that appeared once in the session transcript stays
-// recoverable on disk (PLAN §6.1 DestroyWorkspace, §9 transcript leakage).
+// recoverable on disk (this backs DestroyWorkspace and limits transcript leakage).
 func (w *Workspace) Destroy(ctx context.Context, id session.ID) error {
 	if !id.Valid() {
 		return fmt.Errorf("destroy workspace: invalid session_id %q", id)
@@ -95,7 +95,7 @@ func (w *Workspace) RootfsExt4Path(imageSHA string) string {
 }
 
 // EnsureRootfs makes sure the decompressed golden rootfs for imageSHA exists, decompressing
-// rootfs-<sha>.ext4.zst on first use (the cache ships compressed, §7.2). Returns the .ext4
+// rootfs-<sha>.ext4.zst on first use (the cache ships compressed). Returns the .ext4
 // path to reflink-copy per launch.
 func (w *Workspace) EnsureRootfs(ctx context.Context, imageSHA string) (string, error) {
 	if !imageSHAPattern.MatchString(imageSHA) {

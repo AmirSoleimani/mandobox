@@ -22,12 +22,12 @@ import (
 // socketWait is how long to wait for Firecracker's API socket to appear after jailer start.
 const socketWait = 10 * time.Second
 
-// defaultBootArgs boots to the rootfs's own init. The golden image (M3) makes
-// fc-supervisor PID 1; a test rootfs used to validate M2 supplies its own init.
+// defaultBootArgs boots to the rootfs's own init. The golden image makes
+// fc-supervisor PID 1; a test rootfs supplies its own init.
 const defaultBootArgs = "console=ttyS0 reboot=k panic=1 pci=off"
 
 // FirecrackerDriver launches microVMs under jailer and configures them over the
-// Firecracker API socket. This is the KVM-dependent path (PLAN §7.1); its lifecycle is
+// Firecracker API socket. This is the KVM-dependent path; its lifecycle is
 // exercised in tests through the VMDriver interface with a fake.
 type FirecrackerDriver struct {
 	cfg    Config
@@ -61,7 +61,7 @@ func (d *FirecrackerDriver) instanceDir(id session.ID) string {
 	return filepath.Join(d.cfg.JailDir, d.execFileName(), jailerID(id))
 }
 
-// Launch runs the PLAN §7.1 sequence: jailer → place resources in the chroot → configure
+// Launch runs the launch sequence: jailer → place resources in the chroot → configure
 // boot source, drives, network, machine, MMDS → InstantStart.
 func (d *FirecrackerDriver) Launch(ctx context.Context, spec LaunchSpec) (LaunchResult, error) {
 	if !spec.Session.Valid() {
@@ -78,7 +78,7 @@ func (d *FirecrackerDriver) Launch(ctx context.Context, spec LaunchSpec) (Launch
 		killProcess(pid, 3*time.Second)
 	}
 
-	// Fresh chroot each boot — no snapshots, no reused state (PLAN §4.2).
+	// Fresh chroot each boot — no snapshots, no reused state.
 	if err := os.RemoveAll(instance); err != nil {
 		return LaunchResult{}, fmt.Errorf("launch: clear stale chroot: %w", err)
 	}
@@ -237,7 +237,7 @@ func (d *FirecrackerDriver) configure(ctx context.Context, spec LaunchSpec, sock
 		{"/machine-config", map[string]any{
 			"vcpu_count": spec.VCPUs, "mem_size_mib": spec.MemMiB, "smt": false,
 		}},
-		// MMDS V2 requires a session token to read, blocking casual SSRF-shaped reads (§9).
+		// MMDS V2 requires a session token to read, blocking casual SSRF-shaped reads.
 		{"/mmds/config", map[string]any{
 			"version": "V2", "network_interfaces": []string{"eth0"},
 			"ipv4_address": d.cfg.mmdsAddr(),
@@ -254,7 +254,7 @@ func (d *FirecrackerDriver) configure(ctx context.Context, spec LaunchSpec, sock
 }
 
 // Destroy stops the VM and removes its ephemeral chroot. The persistent workspace volume is
-// untouched — only its hardlink inside the chroot goes away (PLAN §7.6, I7).
+// untouched — only its hardlink inside the chroot goes away.
 func (d *FirecrackerDriver) Destroy(_ context.Context, rec VMRecord) error {
 	if rec.PID > 0 {
 		killProcess(rec.PID, 5*time.Second)
@@ -319,7 +319,7 @@ func waitForSocket(path string, timeout time.Duration) error {
 }
 
 // killProcess sends SIGTERM then, after grace, SIGKILL, and waits briefly to confirm the process
-// is actually gone — a VM wedged in uninterruptible I/O can defer SIGKILL, and callers that then
+// is actually gone — a VM stuck in uninterruptible I/O can defer SIGKILL, and callers that then
 // remove state must not race a still-live process (that orphan would collide with a relaunch).
 func killProcess(pid int, grace time.Duration) {
 	if pid <= 0 {

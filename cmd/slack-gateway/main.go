@@ -1,4 +1,4 @@
-// Command slack-gateway is the Slack inbound half of the control plane (PLAN §6.4). It runs on
+// Command slack-gateway is the Slack inbound half of the control plane. It runs on
 // the fleet host and connects to Slack over Socket Mode (no public ingress), translating:
 //   - the /mando slash command  → start a PRWorkflow
 //   - replies in a session thread → a user_message signal to that workflow
@@ -73,7 +73,7 @@ func main() {
 		namespace:  env("TEMPORAL_NAMESPACE", "fleet"),
 		imageSHA:   os.Getenv("IMAGE_SHA"),
 		shaFile:    env("FLEET_IMAGE_SHA_FILE", "/var/lib/fleet/images/current.sha"),
-		model:      env("CLAUDE_MODEL", "claude-sonnet-5"), // real model id (§10)
+		model:      env("CLAUDE_MODEL", "claude-sonnet-5"), // real model id
 		cheapModel: env("CLAUDE_CHEAP_MODEL", "claude-haiku-4-5-20251001"),
 		baseBranch: env("BASE_BRANCH", "main"),
 	}
@@ -138,7 +138,7 @@ func (g *gateway) handleSlash(cmd slack.SlashCommand) string {
 		return g.handleAttachDetach(cmd, f[0], target)
 	}
 	// Model & resources are left unset so the resolved config (box + repo .mandobox.yml) decides.
-	// --cheap is an explicit per-task override to the cheap model class (§10).
+	// --cheap is an explicit per-task override to the cheap model class.
 	model := ""
 	if rest, found := strings.CutPrefix(text, "--cheap "); found {
 		model, text = g.cheapModel, strings.TrimSpace(rest)

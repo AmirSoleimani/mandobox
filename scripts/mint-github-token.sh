@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # mint-github-token.sh — mint a 1-hour GitHub App installation token (App JWT -> token).
 #
-# Manual stand-in for M4's credential minter. Prints the token on stdout (nothing else),
+# Manual stand-in for the credential minter. Prints the token on stdout (nothing else),
 # so it composes: GITHUB_TOKEN="$(scripts/mint-github-token.sh)".
 #
 # Env:

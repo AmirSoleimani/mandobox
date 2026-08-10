@@ -1,7 +1,7 @@
 ---
 reaper_bin: /usr/local/sbin/mando-reaper
 
-# Absolute VM lifetime and heartbeat-staleness thresholds (PLAN §7.6).
+# Absolute VM lifetime and heartbeat-staleness thresholds.
 reaper_max_lifetime_seconds: 21600 # 6h
 reaper_heartbeat_timeout_seconds: 600 # 10m
 reaper_term_grace_seconds: 10 # SIGTERM → SIGKILL grace

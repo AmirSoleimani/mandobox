@@ -28,7 +28,7 @@ type Activities struct {
 	NATSAccountSeed   string // Tier-0 account signing seed (mints per-session user creds)
 	NATSAccountPubKey string // account public key (issuer-account on minted creds)
 	NATSServiceCreds  string // path to the worker/bridge service .creds (agent.> pub/sub)
-	GatewayURL        string // egress gateway base — the guest's LLM base_url (§9)
+	GatewayURL        string // egress gateway base — the guest's LLM base_url
 	BotUser           string
 	BotEmail          string
 	SlackBotToken     string // xoxb- token for chat.postMessage; empty → Slack posts are no-ops
@@ -84,7 +84,7 @@ func (a *Activities) natsConnect(url string, opts ...nats.Option) (*nats.Conn, e
 	return nats.Connect(url, opts...)
 }
 
-// MintCredentials issues the per-session Tier-1 tokens (I1, §9). The Anthropic key is never minted
+// MintCredentials issues the per-session Tier-1 tokens. The Anthropic key is never minted
 // here — the guest's LLM auth token is a session handle the egress gateway exchanges for the real key
 // host-side. The minted NATS creds confine the guest to its own agent.<sid>.> subtree (natsauth).
 func (a *Activities) MintCredentials(ctx context.Context, in WorkflowInput) (Credentials, error) {
@@ -237,7 +237,7 @@ type CheckPRResult struct {
 }
 
 // CheckPR asks GitHub whether the branch already has an open PR — the source of truth when the
-// guest's pr_opened event was lost in transit (§6).
+// guest's pr_opened event was lost in transit.
 func (a *Activities) CheckPR(ctx context.Context, p CheckPRParams) (CheckPRResult, error) {
 	n, url, err := a.App.FindOpenPRByBranch(ctx, p.Repo, p.Branch)
 	if err != nil {
@@ -253,7 +253,7 @@ type FetchThreadParams struct {
 }
 
 // FetchPRThread returns the PR's full human conversation from GitHub, so the workflow can fold in
-// any comment a dropped webhook never delivered (§6.2). The bot's own replies are excluded.
+// any comment a dropped webhook never delivered. The bot's own replies are excluded.
 func (a *Activities) FetchPRThread(ctx context.Context, p FetchThreadParams) ([]ThreadComment, error) {
 	return a.App.FetchPRThread(ctx, p.Repo, p.PRNumber, a.BotUser)
 }
@@ -321,7 +321,7 @@ type PostPRCommentParams struct {
 }
 
 // PostPRComment mirrors a reply into the PR — threaded under the reviewer's inline comment when
-// there is one, so they see the answer right where they asked (§6.4).
+// there is one, so they see the answer right where they asked.
 func (a *Activities) PostPRComment(ctx context.Context, p PostPRCommentParams) error {
 	if p.ReplyToID != 0 {
 		return a.App.PostReviewCommentReply(ctx, p.Repo, p.PRNumber, p.ReplyToID, p.Body)
@@ -340,7 +340,7 @@ func (a *Activities) DestroyVM(ctx context.Context, p DestroyParams) error {
 	return a.Fleet.Destroy(ctx, p.SessionID, p.PurgeWorkspace)
 }
 
-// DeliverMessage publishes a command to a running guest over NATS (§8.3). `claude -p` is not
+// DeliverMessage publishes a command to a running guest over NATS. `claude -p` is not
 // interactive, so the guest queues user_message for the next turn; abort cancels the run.
 func (a *Activities) DeliverMessage(ctx context.Context, p DeliverParams) error {
 	url := p.NATSURL
@@ -379,7 +379,7 @@ const phaseLivenessWindow = 2 * time.Minute
 // RunAgentPhase subscribes to the guest's NATS event stream, heartbeats to Temporal, and
 // returns the first terminal outcome (pr_opened | push_done | agent_failed | needs_input). If
 // the guest stops heartbeating without a terminal event, it returns agent_failed(vm_lost).
-// This keeps per-phase completions out of workflow history (§6.3) — nats-bridge persists the
+// This keeps per-phase completions out of workflow history — nats-bridge persists the
 // full log/event stream separately.
 func (a *Activities) RunAgentPhase(ctx context.Context, sessionID string) (PhaseResult, error) {
 	url := a.NATSURL

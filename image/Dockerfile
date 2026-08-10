@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 #
-# Golden guest image (PLAN §7.2). Built in CI, exported to an ext4 rootfs by image/build.sh.
-# fc-supervisor is PID 1 — there is no systemd, sshd, cron, dbus, or cloud-init. Per D1 the
+# Golden guest image. Built in CI, exported to an ext4 rootfs by image/build.sh.
+# fc-supervisor is PID 1 — there is no systemd, sshd, cron, dbus, or cloud-init. The
 # guest verifies with linters + language unit tests; full e2e is delegated to GitHub CI, so
 # no Docker is installed here. Pin every version; a PR that opens under one and resumes under
-# another produces behaviour changes mid-review (§7.2).
+# another produces behaviour changes mid-review.
 
 # --- Stage 1: build fc-supervisor (static) ---
 ARG GO_VERSION=1.25.12
@@ -25,7 +25,7 @@ ARG GO_VERSION=1.25.12
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Tools Claude Code shells out to constantly; their absence degrades output in ways that look
-# like model problems (§7.2). fd ships as fdfind on Debian.
+# like model problems. fd ships as fdfind on Debian.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git jq ripgrep fd-find \
       python3 python3-venv openssh-client less procps iproute2 e2fsprogs \
@@ -62,11 +62,11 @@ RUN python3 -m venv /opt/pytools \
     && /opt/pytools/bin/pip install --no-cache-dir ruff \
     && ln -sf /opt/pytools/bin/ruff /usr/local/bin/ruff
 
-# fc-supervisor as PID 1 (§8.1).
+# fc-supervisor as PID 1.
 COPY --from=supervisor /out/fc-supervisor /sbin/fc-supervisor
 RUN ln -sf /sbin/fc-supervisor /sbin/init
 
-# Module/build caches live on the workspace volume, not the image (§7.2).
+# Module/build caches live on the workspace volume, not the image.
 ENV GOMODCACHE=/workspace/.cache/go/mod \
     GOCACHE=/workspace/.cache/go/build \
     npm_config_cache=/workspace/.cache/npm

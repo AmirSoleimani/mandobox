@@ -78,7 +78,7 @@ func TestRunInitialOpensPR(t *testing.T) {
 	if fa.gotSpec.Resume {
 		t.Error("initial run should not be a resume")
 	}
-	// ~/.claude symlink into the workspace (the load-bearing line, §8.1).
+	// ~/.claude symlink into the workspace (the load-bearing line).
 	if target, err := os.Readlink(filepath.Join(sup.home, ".claude")); err != nil ||
 		target != filepath.Join(sup.workspaceDir, ".claude") {
 		t.Errorf("~/.claude link = %q err=%v", target, err)
@@ -163,7 +163,7 @@ func TestCommitMessageUsesGeneratedThenFallsBack(t *testing.T) {
 
 func TestRunNoChangesClosesCleanly(t *testing.T) {
 	sup, ft, fr, _ := newTestSupervisor(t, mustCfg(t, validMMDS))
-	fr.outputs["status --porcelain"] = "" // agent produced no diff (§13)
+	fr.outputs["status --porcelain"] = "" // agent produced no diff
 
 	if err := sup.Run(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)

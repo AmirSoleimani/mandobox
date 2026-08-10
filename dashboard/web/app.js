@@ -204,12 +204,12 @@ function renderSessions(list) {
     watch.addEventListener("click", () => openActivity(s.workflow_id, (s.repo || "") + " · " + ellipsis(s.workflow_id, 20), running));
     const actions = [watch];
     if (s.stuck) {
-      const term = el("button", { class: "btn btn-sm btn-danger", title: "Force-terminate this wedged workflow" }, "terminate");
+      const term = el("button", { class: "btn btn-sm btn-danger", title: "Force-terminate this stalled workflow" }, "terminate");
       term.addEventListener("click", () => terminateSession(s.workflow_id));
       actions.push(term);
     }
     const phaseCell = s.stuck
-      ? el("td", {}, el("span", { class: "badge badge-warn", title: "Running, but its status query failed — likely a wedged workflow task" }, "stuck"))
+      ? el("td", {}, el("span", { class: "badge badge-warn", title: "Running, but its status query failed — likely a stalled workflow task" }, "stuck"))
       : el("td", {}, phaseText(s));
     return el("tr", { class: s.stuck ? "row-warn" : "" },
       el("td", {}, el("div", { class: "row-actions" }, ...actions)),
@@ -232,7 +232,7 @@ function renderSessions(list) {
 function ellipsis(s, n) { s = esc(s); return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 
 // phaseText distinguishes a live phase, a still-open workflow whose status query didn't answer
-// (worker busy, or the workflow task is wedged), and a normally-closed workflow.
+// (worker busy, or the workflow task is stalled), and a normally-closed workflow.
 function phaseText(s) {
   if (s.phase) return s.phase;
   if (s.status === "Running") return s.live ? "—" : "(no live data)";

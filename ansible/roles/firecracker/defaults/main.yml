@@ -1,5 +1,5 @@
 ---
-# Firecracker + jailer. Pin the version and verify the checksum (§7.2). Bump both
+# Firecracker + jailer. Pin the version and verify the checksum. Bump both
 # together; get the sha256 from the release's *.sha256.txt asset.
 firecracker_version: "1.16.1"
 firecracker_arch: x86_64

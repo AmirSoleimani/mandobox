@@ -9,10 +9,10 @@ nats_user: nats
 
 # Single-machine build: bind the host anchor so guests reach NATS via the nftables input
 # accept, and it is NOT exposed on the public interface. Host-side clients use the same
-# address. M4 adds per-session JWT auth.
+# address. Per-session JWT auth is added later.
 nats_listen: "{{ fleet_host_gw_addr }}:4222"
 
-# Matches the guest supervisor's large stream-json log lines (§8.2).
+# Matches the guest supervisor's large stream-json log lines.
 nats_max_payload: "8MB"
 
 # Decentralized-auth artifacts, generated ONCE on the controller with `mando-natsauth -out secrets/nats`.

@@ -14,8 +14,8 @@ type workflowLister interface {
 	ListWorkflow(context.Context, *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
 }
 
-// TemporalAuthority is the M4 reconciler authority (PLAN §7.7): a VM is expected iff its session's
-// PRWorkflow is still Running. It replaces the M2 FileAuthority — self-maintaining from Temporal's
+// TemporalAuthority is the reconciler authority: a VM is expected iff its session's
+// PRWorkflow is still Running. It replaces the earlier FileAuthority — self-maintaining from Temporal's
 // open workflows, so warm VMs a workflow is holding for keep_alive are never mistaken for orphans.
 // Only VMs whose workflow has closed or vanished get reaped.
 type TemporalAuthority struct {

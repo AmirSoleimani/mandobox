@@ -5,8 +5,8 @@ base_packages:
   - ca-certificates
   - curl
   - iproute2
-  - e2fsprogs # mkfs.ext4 for workspace volumes (M2)
-  - zstd # golden rootfs is shipped .ext4.zst (§7.2)
+  - e2fsprogs # mkfs.ext4 for workspace volumes
+  - zstd # golden rootfs is shipped .ext4.zst
   - jq
   - busybox-static # minimal init for the smoke-test initramfs
   - cpio # build the smoke-test initramfs

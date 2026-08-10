@@ -22,7 +22,7 @@ import (
 
 // GitHubApp mints short-lived installation tokens (Tier-1) from the App's private key
 // (Tier-0). This is the Go port of scripts/mint-github-token.sh: an RS256 App JWT, then an
-// installation-scoped access token. The private key never leaves the host (§9).
+// installation-scoped access token. The private key never leaves the host.
 type GitHubApp struct {
 	AppID          string
 	InstallationID string // if empty, resolved from Org
@@ -67,7 +67,7 @@ func parseRSAKey(pemBytes []byte) (*rsa.PrivateKey, error) {
 	return rk, nil
 }
 
-// appJWT builds the RS256 App JWT: iat backdated 60s, exp now+9m, iss=AppID (§9, GitHub caps
+// appJWT builds the RS256 App JWT: iat backdated 60s, exp now+9m, iss=AppID (GitHub caps
 // the lifetime at 10m).
 func (g *GitHubApp) appJWT() (string, error) {
 	now := g.now()
@@ -88,7 +88,7 @@ func b64url(s string) string { return base64.RawURLEncoding.EncodeToString([]byt
 
 // MintInstallationToken returns a ~1h token for the WHOLE installation (every repo, all granted
 // permissions). Prefer MintRepoToken for anything touching one repo — a token handed to an untrusted
-// guest must never reach another repo in the installation (§9, least privilege).
+// guest must never reach another repo in the installation (least privilege).
 func (g *GitHubApp) MintInstallationToken(ctx context.Context) (string, error) {
 	return g.mintToken(ctx, "", nil)
 }
@@ -162,7 +162,7 @@ func (g *GitHubApp) resolveInstallationID(ctx context.Context, jwt string) (stri
 
 // FindOpenPRByBranch returns the open PR whose head is `branch` in `repo` (owner/name), or
 // (0, "") if none. Used to reconcile after a run whose pr_opened event was lost — NATS is
-// at-most-once, so a real PR must never be mistaken for "no PR" (§6).
+// at-most-once, so a real PR must never be mistaken for "no PR".
 func (g *GitHubApp) FindOpenPRByBranch(ctx context.Context, repo, branch string) (int, string, error) {
 	token, err := g.MintRepoToken(ctx, repo, map[string]string{"pull_requests": "read"})
 	if err != nil {
@@ -215,7 +215,7 @@ type ThreadComment struct {
 
 // FetchPRThread returns the PR's full conversation from GitHub — the source of truth — so the
 // workflow can reconcile against dropped webhooks and never leave the agent missing a comment
-// (§6.2, at-most-once delivery). Bot-authored entries (the agent's own replies) are excluded so
+// (at-most-once delivery). Bot-authored entries (the agent's own replies) are excluded so
 // they never re-enter as feedback, and empty entries (a bare "commented" review) are dropped.
 // Results are ordered oldest-first. One page (100) of each kind — ample for a review thread.
 func (g *GitHubApp) FetchPRThread(ctx context.Context, repo string, prNumber int, botUser string) ([]ThreadComment, error) {
@@ -355,7 +355,7 @@ func (g *GitHubApp) PostPRComment(ctx context.Context, repo string, prNumber int
 }
 
 // PostReviewCommentReply threads a reply under a specific inline review comment, so the agent's
-// answer lands right where the reviewer asked (§6.4).
+// answer lands right where the reviewer asked.
 func (g *GitHubApp) PostReviewCommentReply(ctx context.Context, repo string, prNumber int, commentID int64, body string) error {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/pulls/%d/comments/%d/replies", repo, prNumber, commentID)
 	return g.postComment(ctx, "reply to review comment", repo, url, body)

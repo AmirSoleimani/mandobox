@@ -22,18 +22,18 @@ type AgentSpec struct {
 	ClaudeSessionID string // Claude's own session UUID, captured from the initial run
 	BaseURL         string // host LLM gateway
 	AuthToken       string // per-session bearer token
-	SystemPrompt    string // per-repo instructions appended to the agent's system prompt (§config)
+	SystemPrompt    string // per-repo instructions appended to the agent's system prompt
 	Auth            string // "" | "api_key" (default, via gateway) | "subscription" (OAuth, direct)
 	OAuthToken      string // Claude subscription OAuth token, used only when Auth == "subscription"
 }
 
 // AgentRunner runs the coding agent. It is an interface so another harness could slot in
-// (PLAN §1 non-goal, but the seam is kept) and so orchestration is testable with a fake.
+// (a non-goal for now, but the seam is kept) and so orchestration is testable with a fake.
 type AgentRunner interface {
 	Run(ctx context.Context, spec AgentSpec, onLine func([]byte)) (Result, error)
 }
 
-// ClaudeRunner runs Claude Code headless, streaming stream-json (§8.2).
+// ClaudeRunner runs Claude Code headless, streaming stream-json.
 type ClaudeRunner struct{ bin string }
 
 // NewClaudeRunner returns a runner for the pinned `claude` CLI.
@@ -69,14 +69,14 @@ func (c *ClaudeRunner) Run(ctx context.Context, spec AgentSpec, onLine func([]by
 	return res, nil
 }
 
-// claudeArgs builds the CLI arguments (§8.2). Resume reuses Claude's own session so the
-// transcript on the workspace volume continues (§8.1).
+// claudeArgs builds the CLI arguments. Resume reuses Claude's own session so the
+// transcript on the workspace volume continues.
 func claudeArgs(spec AgentSpec) []string {
 	args := []string{
 		"-p", spec.Prompt,
 		"--output-format", "stream-json",
 		"--verbose",
-		// The microVM is the sandbox (§8.1): bypass Claude Code's own approval prompts so the
+		// The microVM is the sandbox: bypass Claude Code's own approval prompts so the
 		// headless agent can run bash tools (tests, linters, git) without a human to approve.
 		// acceptEdits auto-approves file edits only, so bash calls hang/fail with no approver.
 		"--permission-mode", "bypassPermissions",
@@ -95,12 +95,12 @@ func claudeArgs(spec AgentSpec) []string {
 
 // agentEnv builds the agent's environment: it points Claude Code at the host gateway and
 // strips ANTHROPIC_API_KEY, which must never be set in a guest — if it were, Claude Code
-// would prefer it over the gateway token and bypass the proxy entirely (invariant I9, §10).
+// would prefer it over the gateway token and bypass the proxy entirely.
 func agentEnv(base []string, spec AgentSpec) ([]string, error) {
 	out := make([]string, 0, len(base)+5)
 	for _, e := range base {
 		if isAnthropicAPIKey(e) {
-			continue // I9: strip any inherited key
+			continue // strip any inherited key
 		}
 		out = append(out, e)
 	}
@@ -128,7 +128,7 @@ func agentEnv(base []string, spec AgentSpec) ([]string, error) {
 		)
 	}
 	if slices.ContainsFunc(out, isAnthropicAPIKey) {
-		return nil, errors.New("I9 violation: ANTHROPIC_API_KEY present in agent environment")
+		return nil, errors.New("security-invariant violation: ANTHROPIC_API_KEY present in agent environment")
 	}
 	return out, nil
 }

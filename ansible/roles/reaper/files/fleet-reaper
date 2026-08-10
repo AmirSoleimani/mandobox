@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # mando-reaper — host-side safety net that kills Firecracker microVMs which have
 # exceeded their absolute lifetime or gone silent, and cleans up after VMs that died on
-# their own. PLAN §7.6, invariant I8.
+# their own.
 #
 # It NEVER touches workspace volumes — a reaped VM's PR may still be open; only the
 # transient run-state dir under FLEET_VM_STATE_DIR and the VM's tap device are removed.
@@ -115,11 +115,11 @@ for vmdir in "${STATE_DIR}"/*/; do
 
   if [ -n "${reason}" ]; then
     reap "${pid}" "${sid}" "${reason}"
-    remove_vm "${vmdir}" # transient state + tap only — NOT the workspace volume (§7.6)
+    remove_vm "${vmdir}" # transient state + tap only — NOT the workspace volume
   fi
 done
 
-# Sweep orphan Firecracker processes whose VM state dir is gone. A guest that wedges (never
+# Sweep orphan Firecracker processes whose VM state dir is gone. A guest that stalls (never
 # reaches its clean power-off) can outlive `DestroyVM`, which removes the state dir but may not
 # kill a process stuck in uninterruptible I/O. Nothing else catches a process with no state
 # dir — the main loop and the reconciler are both state-driven — so this is the last net.

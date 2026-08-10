@@ -11,7 +11,7 @@ not import `internal/control`; it decodes the workflow's `status` query into a s
 - **Sessions** — the recent `PRWorkflow` executions from Temporal (visibility list + live `status`
   query for running ones): status, repo, phase, branch, PR, VM state, review round, cost, start time.
   Auto-refreshes every 5s. **+ New session** dispatches a task; a **stuck** badge + **terminate**
-  appears on wedged workflows; each row has a **watch/connect** button →
+  appears on stalled workflows; each row has a **watch/connect** button →
 - **Health** — "is the box set up and running?": fleet services (systemctl), endpoint reachability
   (Temporal/LiteLLM/NATS/agent), active image, disk, VM count, secret presence — green/red.
 - **Costs** — spend reconstructed from the archived per-session cost events (survives Temporal

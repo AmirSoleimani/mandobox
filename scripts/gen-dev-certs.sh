@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gen-dev-certs.sh — generate a self-signed dev PKI for mando-agent mTLS.
 #
-# FOR M2 TESTING ONLY. Not a real CA: one CA signs both the server (mando-agent) and the
+# FOR TESTING ONLY. Not a real CA: one CA signs both the server (mando-agent) and the
 # client (mando-reconciler / control plane). Replace with your real PKI before production.
 #
 # Usage: scripts/gen-dev-certs.sh [OUT_DIR] [SERVER_HOST]

@@ -1,10 +1,10 @@
-// Command mando-gateway is the fleet host's egress proxy (PLAN §7.5, §10). It binds the host
+// Command mando-gateway is the fleet host's egress proxy. It binds the host
 // service anchor and is the only egress path for guests: it injects the real Anthropic key
 // (host-side, never in a guest) for ANTHROPIC_BASE_URL traffic and tunnels allowlisted
 // git/registry hosts for HTTPS_PROXY traffic — on one port.
 //
-// LiteLLM/mcp-guardian replace or front this at M5 for model routing and richer policy; this
-// minimal gateway covers the single-model M3 path.
+// LiteLLM/mcp-guardian replace or front this later for model routing and richer policy; this
+// minimal gateway covers the single-model path.
 package main
 
 import (

@@ -1,7 +1,7 @@
 {{ '#' }} {{ ansible_managed }}
 {{ '#' }} No database. Claude Code sends real Anthropic model IDs (it expands its own aliases)
 {{ '#' }} plus a small-fast model, so the base is a wildcard passthrough to Anthropic; named
-{{ '#' }} overrides win and can point a model at a cheaper provider (§10).
+{{ '#' }} overrides win and can point a model at a cheaper provider.
 model_list:
 {% for m in litellm_model_overrides %}
   - model_name: "{{ m.name }}"

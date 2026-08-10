@@ -15,11 +15,11 @@ import (
 )
 
 // ErrAtCapacity is returned when the fleet is already running MaxVMs. The HTTP layer maps
-// it to 503 so the LaunchVM activity retries with backoff (PLAN §7.1, EX_TEMPFAIL).
+// it to 503 so the LaunchVM activity retries with backoff (EX_TEMPFAIL).
 var ErrAtCapacity = errors.New("fleet at capacity")
 
 // ErrForbiddenMMDS is returned when a launch payload would place a Tier-0 credential in a
-// guest (invariant I9). mando-agent refuses rather than trusting the caller.
+// guest (a trust-boundary invariant). mando-agent refuses rather than trusting the caller.
 var ErrForbiddenMMDS = errors.New("mmds payload contains a forbidden key")
 
 // procAlive reports whether a pid names a live process. It is a package var so tests can
@@ -154,7 +154,7 @@ func (m *Manager) Launch(ctx context.Context, req LaunchRequest) (VMRecord, erro
 		StartedAt: nowUnix(),
 	}
 	if err := m.store.Put(rec); err != nil {
-		// State write failed after boot: tear the VM down rather than leak an untracked VM (I8).
+		// State write failed after boot: tear the VM down rather than leak an untracked VM.
 		_ = m.driver.Destroy(ctx, rec)
 		_ = m.net.DeleteTap(ctx, gnet.Tap)
 		return VMRecord{}, fmt.Errorf("launch: record state: %w", err)
@@ -164,7 +164,7 @@ func (m *Manager) Launch(ctx context.Context, req LaunchRequest) (VMRecord, erro
 }
 
 // Destroy stops a VM and frees its tap and runtime state. The workspace volume is preserved
-// unless purgeWorkspace is set (PLAN §6.1: DestroyVM keeps it; DestroyWorkspace discards).
+// unless purgeWorkspace is set (DestroyVM keeps it; DestroyWorkspace discards).
 // It is idempotent: destroying an unknown session is not an error.
 func (m *Manager) Destroy(ctx context.Context, id session.ID, purgeWorkspace bool) error {
 	if !id.Valid() {
@@ -203,7 +203,7 @@ func (m *Manager) Destroy(ctx context.Context, id session.ID, purgeWorkspace boo
 	return nil
 }
 
-// List returns every VM mando-agent is tracking, for reconciliation (PLAN §7.7).
+// List returns every VM mando-agent is tracking, for reconciliation.
 func (m *Manager) List() ([]VMRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -218,7 +218,7 @@ func orDefault(v, def int) int {
 }
 
 // mergeMMDS returns a shallow copy of payload augmented with the network facts mando-agent
-// allocated at launch (the guest learns its own IP from MMDS — §8.1) and the session_id for
+// allocated at launch (the guest learns its own IP from MMDS) and the session_id for
 // correlation. mando-agent's network is authoritative and overrides any provided value.
 func mergeMMDS(payload map[string]any, id session.ID, g GuestNet) map[string]any {
 	out := make(map[string]any, len(payload)+2)
@@ -229,8 +229,8 @@ func mergeMMDS(payload map[string]any, id session.ID, g GuestNet) map[string]any
 }
 
 // forbiddenMMDSKey reports whether payload contains, at any depth, a key that must never
-// reach a guest (invariant I9). This is a defensive guard; the primary enforcement is the
-// guest environment (M3).
+// reach a guest (a trust-boundary invariant). This is a defensive guard; the primary enforcement is the
+// guest environment.
 func forbiddenMMDSKey(payload map[string]any) bool {
 	const forbidden = "anthropic_api_key"
 	var walk func(any) bool

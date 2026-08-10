@@ -1,8 +1,8 @@
 #!/usr/sbin/nft -f
 # {{ ansible_managed }}
 #
-# Guest egress policy — PLAN §7.4, invariants I2 (no inbound to guests) and I3 (no
-# guest-to-guest). Single-machine build: every service a guest may reach is host-local, on
+# Guest egress policy enforcing the trust-boundary invariants: no inbound to guests, and no
+# guest-to-guest traffic. Single-machine build: every service a guest may reach is host-local, on
 # the anchor address {{ fleet_host_gw_addr }}. Deny-by-default for the guest tap class
 # ("{{ fleet_guest_iface_prefix }}*"): a guest may reach ONLY
 #   - the host resolver     ({{ fleet_host_gw_addr }} udp/tcp 53)
@@ -53,7 +53,7 @@ table inet fleet {
 
         ct state established,related accept
 
-        # No guest-to-guest lateral movement (I3).
+        # No guest-to-guest lateral movement.
         iifname "{{ fleet_guest_iface_prefix }}*" oifname "{{ fleet_guest_iface_prefix }}*" counter drop
 
         # Deny-by-default for everything else forwarded from a guest.

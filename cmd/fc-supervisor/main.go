@@ -1,8 +1,8 @@
-// Command fc-supervisor is the guest's PID 1 (PLAN §8.1). It reads its boot config from
+// Command fc-supervisor is the guest's PID 1. It reads its boot config from
 // MMDS, refuses to run without NATS (no transport means no observability or abort channel),
 // runs Claude Code against the target repo behind the host LLM gateway, and turns the result
 // into a pull request. It holds only per-session Tier-1 tokens; ANTHROPIC_API_KEY is never
-// set (I1, I9).
+// set.
 //
 // Build static: CGO_ENABLED=0. It is Linux-only at runtime (mounts, reboot).
 package main
@@ -39,7 +39,7 @@ func main() {
 
 	// Adopt the hostname the VS Code tunnel token was minted under. The CLI binds its stored auth
 	// to the hostname, so without this a human attach falls back to the GitHub device login even
-	// though the token is present (§remote-attach). Writing the kernel hostname via /proc is
+	// though the token is present. Writing the kernel hostname via /proc is
 	// equivalent to sethostname(2) and keeps this file OS-portable to compile. No-op when unset.
 	if h := cfg.VSCode.Hostname; h != "" {
 		if err := os.WriteFile("/proc/sys/kernel/hostname", []byte(h), 0o644); err != nil {
@@ -58,7 +58,7 @@ func main() {
 		fatal(log, platform, "network", err)
 	}
 
-	// Refuse to run without transport: no NATS means nothing can see or stop this VM (§8.1).
+	// Refuse to run without transport: no NATS means nothing can see or stop this VM.
 	transport, err := supervisor.DialNATS(cfg.NATS.URL, cfg.NATS.Creds)
 	if err != nil {
 		fatal(log, platform, "nats", err)
@@ -85,7 +85,7 @@ func main() {
 	}
 	_ = bus.Close()
 
-	// Sync and power the microVM off cleanly (§8.1).
+	// Sync and power the microVM off cleanly.
 	platform.Sync()
 	if err := platform.PowerOff(); err != nil {
 		log.Error("power off", "err", err)

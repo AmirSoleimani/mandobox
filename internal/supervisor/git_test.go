@@ -46,7 +46,7 @@ func TestSetupCredentialsNoTokenInURLOrEnv(t *testing.T) {
 		t.Fatalf("read helper: %v", err)
 	}
 	if strings.Contains(string(helper), cfg.GitHub.Token) {
-		t.Error("token must not be embedded in the credential helper (§9)")
+		t.Error("token must not be embedded in the credential helper")
 	}
 	if !strings.Contains(string(helper), g.tokenPath) {
 		t.Error("helper should cat the token path")

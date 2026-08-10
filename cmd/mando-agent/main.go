@@ -1,5 +1,5 @@
 // Command mando-agent is the fleet host's microVM API. It is mTLS-only; the control plane
-// initiates every call (PLAN §7.1). It creates and destroys Firecracker microVMs and never
+// initiates every call. It creates and destroys Firecracker microVMs and never
 // holds policy or long-lived credentials.
 package main
 

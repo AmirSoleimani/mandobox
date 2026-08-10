@@ -222,7 +222,7 @@ func (s *Supervisor) detach() {
 
 // tunnelEnv routes `code tunnel` through the host egress gateway (like the agent), so its traffic
 // stays inside the allowlist. The CLI's auth path is pinned separately via --cli-data-dir (see
-// runTunnel), so it does not depend on HOME. Nothing here carries a Tier-0 credential (I1).
+// runTunnel), so it does not depend on HOME. Nothing here carries a Tier-0 credential.
 func (s *Supervisor) tunnelEnv() []string {
 	env := os.Environ()
 	if gw := s.cfg.LLM.BaseURL; gw != "" {

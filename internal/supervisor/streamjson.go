@@ -17,7 +17,7 @@ type Usage struct {
 }
 
 // Result is the terminal object of a `claude -p --output-format stream-json` run — the one
-// line with type=="result", carrying cost and usage (PLAN §8.2, §10).
+// line with type=="result", carrying cost and usage.
 type Result struct {
 	Type         string  `json:"type"`
 	Subtype      string  `json:"subtype"`
@@ -37,7 +37,7 @@ var ErrNoResult = errors.New("stream ended without a result line")
 // ParseStream reads newline-delimited stream-json from r. It calls onLine with each raw line
 // (for republishing to agent.<sid>.log) and returns the terminal Result. Lines are read with
 // a Reader rather than a Scanner so a large tool-result line never trips the 64KB/8MB token
-// ceiling (§8.2).
+// ceiling.
 func ParseStream(r io.Reader, onLine func([]byte)) (Result, error) {
 	br := bufio.NewReader(r)
 	var result Result
