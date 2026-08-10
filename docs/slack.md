@@ -6,14 +6,14 @@ in its thread — all without exposing anything to the public internet.
 
 - **Outbound** (fleet → Slack): the Temporal worker posts a thread per session via `chat.postMessage`.
 - **Inbound** (Slack → fleet): `slack-gateway` connects to Slack over **Socket Mode** (an outbound
-  WebSocket), so Slack never needs to reach your box. It translates the `/fleet` command and thread
+  WebSocket), so Slack never needs to reach your box. It translates the `/mando` command and thread
   replies into Temporal actions.
 
 ```
-  You in Slack ──/fleet──▶ slack-gateway ──starts──▶ PRWorkflow (Temporal)
+  You in Slack ──/mando──▶ slack-gateway ──starts──▶ PRWorkflow (Temporal)
        ▲                        (Socket Mode)              │
        │                                                   │ activities
-       └──────── thread posts ◀── fleet-worker ◀───────────┘
+       └──────── thread posts ◀── mando-worker ◀───────────┘
                  (chat.postMessage)      RunAgentPhase / PostSlack / …
 ```
 
@@ -32,11 +32,12 @@ no-ops and `slack-gateway` stays stopped — the fleet still runs, just without 
    | scope | why |
    |---|---|
    | `chat:write` | post the session thread |
-   | `commands` | receive the `/fleet` slash command |
+   | `commands` | receive the `/mando` slash command |
    | `app_mentions:read` | (optional) receive @-mentions |
    | `channels:history` | read thread replies in public channels |
    | `groups:history` | read thread replies in private channels |
-4. **Slash Commands** → **Create New Command**: command `/fleet`, Request URL anything
+   | `files:read` | (optional) read files dropped in a thread — attach a `plan.md` and the agent reads it |
+4. **Slash Commands** → **Create New Command**: command `/mando`, Request URL anything
    (`https://example.com` — Socket Mode ignores it), description "dispatch an agent task".
 5. **Event Subscriptions** → **Enable Events** → **Subscribe to bot events**: `message.channels`
    (and `message.groups` for private channels), and `app_mention` if you added that scope.
@@ -72,7 +73,7 @@ ssh root@<box> 'systemctl is-active slack-gateway; journalctl -u slack-gateway -
 # → slack-gateway: connected as fleet (U0…)
 ```
 
-Then in your channel: `/fleet chelodo/hello-gents add a CHANGELOG.md`. Within a few seconds a
+Then in your channel: `/mando your-org/hello-gents add a CHANGELOG.md`. Within a few seconds a
 thread appears.
 
 ### Configuration reference
@@ -81,7 +82,7 @@ thread appears.
 |---|---|---|---|
 | `SLACK_BOT_TOKEN` | `secrets/slack-bot-token` | — | `xoxb-` token; empty ⇒ no Slack |
 | `SLACK_APP_TOKEN` | `secrets/slack-app-token` | — | `xapp-` Socket Mode token |
-| `SLACK_CHANNEL` | `secrets/slack-channel` | — | fallback channel for CLI dispatches |
+| `SLACK_CHANNEL` | `secrets/slack-channel` | — | fallback channel for dispatches started outside Slack |
 | `CLAUDE_MODEL` | `slack-gateway` env | `claude-sonnet-5` | default model id |
 | `CLAUDE_CHEAP_MODEL` | `slack-gateway` env | `claude-haiku-4-5-20251001` | model for `--cheap` |
 | `BASE_BRANCH` | `slack-gateway` env | `main` | branch the agent forks from |
@@ -93,21 +94,21 @@ re-read on every dispatch — so rebuilding the image needs no gateway restart.
 
 ## 3. Using it
 
-### Dispatch — `/fleet`
+### Dispatch — `/mando`
 
 ```
-/fleet <owner/repo> <prompt>
-/fleet --cheap <owner/repo> <prompt>
+/mando <owner/repo> <prompt>
+/mando --cheap <owner/repo> <prompt>
 ```
 
-- `/fleet chelodo/hello-gents add a CONTRIBUTING guide` — dispatch on the default model (Sonnet).
-- `/fleet --cheap chelodo/hello-gents fix the lint warnings` — dispatch on the cheap model (Haiku),
+- `/mando your-org/hello-gents add a CONTRIBUTING guide` — dispatch on the default model (Sonnet).
+- `/mando --cheap your-org/hello-gents fix the lint warnings` — dispatch on the cheap model (Haiku),
   for boring/mechanical work.
 
 You get a private (ephemeral) acknowledgement, then the public thread opens in the same channel:
 
 ```
-(only you see this)  Dispatched s_RX94… on chelodo/hello-gents — I'll open a thread here.
+(only you see this)  Dispatched s_RX94… on your-org/hello-gents — I'll open a thread here.
 ```
 
 The thread is where the whole task unfolds. **One thread = one session = one PR.**
@@ -124,6 +125,18 @@ Reply **inside a session's thread** to talk to that run. What happens depends on
 
 This means you can run a whole review loop from Slack alone — dispatch, read the diff on GitHub, then
 reply in the thread with changes.
+
+**Attach a file.** Drop a text file into your thread reply — a `plan.md`, a spec, notes — and its
+contents are handed to the agent along with your message ("here's the plan, implement it"). Your
+message still carries the intent; the file is content, so a plan that mentions "attach"/"detach"
+can't be mistaken for a VS Code attach request. Needs the bot's `files:read` scope; oversized or
+non-text files (images, PDFs) are skipped with a note.
+
+Slash commands can't carry files, so attach in a **thread reply**, not on the `/mando` line. To make
+a file *the* task, dispatch a placeholder (`/mando owner/repo implement the plan I'm about to drop`)
+then drop the file in the thread — a first run that opens no PR now keeps the session warm and waits
+for it, and the follow-up turn opens the PR. (If nothing arrives before the idle window lapses, the
+session ends on its own.)
 
 ### Ending a session
 
@@ -147,12 +160,12 @@ Thread mockups below show what actually gets posted (emoji shorthand: 🤖 dispa
 ### Scenario A — happy path, steered entirely from Slack
 
 ```
-you:  /fleet chelodo/hello-gents add a LICENSE file (MIT, 2026, chelodo)
+you:  /mando your-org/hello-gents add a LICENSE file (MIT, 2026, your-org)
 
 #fleet
 ┌─ 🤖 Task dispatched  s_RX94WFYM9GSV6J7N07SAP3B40T
-│     repo chelodo/hello-gents   branch agent/s_RX94…
-│     > add a LICENSE file (MIT, 2026, chelodo)
+│     repo your-org/hello-gents   branch agent/s_RX94…
+│     > add a LICENSE file (MIT, 2026, your-org)
 │  └─ 🎉 PR opened #7   (cost $0.2145 · 753 tokens)
 │                                                    ← agent ran, opened the PR, VM torn down
 │  you (reply in thread): also add a copyright header comment at the top
@@ -169,10 +182,10 @@ You did two things in Slack (the slash command and one reply); everything else i
 ### Scenario B — cheap model for mechanical work
 
 ```
-you:  /fleet --cheap chelodo/hello-gents normalize all line endings to LF
+you:  /mando --cheap your-org/hello-gents normalize all line endings to LF
 
 ┌─ 🤖 Task dispatched  s_8QP2…
-│     repo chelodo/hello-gents   branch agent/s_8QP2…
+│     repo your-org/hello-gents   branch agent/s_8QP2…
 │     > normalize all line endings to LF
 │  └─ 🎉 PR opened #8   (cost $0.0121 · 402 tokens)   ← Haiku: ~15× cheaper than Sonnet here
 └─
@@ -185,7 +198,7 @@ worth it.
 ### Scenario C — steering an in-flight run
 
 ```
-you:  /fleet chelodo/api add pagination to the /users endpoint
+you:  /mando your-org/api add pagination to the /users endpoint
 
 ┌─ 🤖 Task dispatched  s_KD7…
 │     > add pagination to the /users endpoint
@@ -201,7 +214,7 @@ interrupting the current one. It still shapes the result.
 ### Scenario D — the agent needs input
 
 ```
-┌─ 🤖 Task dispatched  s_M4A…
+┌─ 🤖 Task dispatched  s_QN7A…
 │     > migrate the config format
 │  └─ ❔ Agent needs input: Two config schemas exist (v1, v2). Which should I migrate to?
 │        Reply in this thread to continue.
@@ -283,11 +296,11 @@ it from the Temporal UI).
 
 | Symptom | Check |
 |---|---|
-| `/fleet` says "dispatch failed" | `journalctl -u slack-gateway`; is Temporal up? is the repo `owner/name`? |
-| No thread appears after `/fleet` | worker Slack posts need `SLACK_BOT_TOKEN`; is the bot **in the channel**? re-run the `control_plane` deploy |
+| `/mando` says "dispatch failed" | `journalctl -u slack-gateway`; is Temporal up? is the repo `owner/name`? |
+| No thread appears after `/mando` | worker Slack posts need `SLACK_BOT_TOKEN`; is the bot **in the channel**? re-run the `control_plane` deploy |
 | Thread replies do nothing | bot needs `channels:history` + the `message.channels` event subscription, and must be a channel member; the reply must be **in the thread**, not top-level |
 | `slack-gateway` won't start | it exits without both tokens — confirm `/etc/fleet/slack.env` has `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` |
-| Merges/review comments ignored | that's the GitHub webhook path — see §6 |
+| Merges/review comments ignored | that's the GitHub webhook path — see [What needs the webhook receiver](#what-needs-the-webhook-receiver) |
 | Wrong/invalid model | dispatch a real model id (Claude Code expands its own aliases); LiteLLM passes it through |
 
 ---

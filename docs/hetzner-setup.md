@@ -1,26 +1,26 @@
 # Hetzner setup
 
 This is a personal, **single-machine** build: you need **exactly one machine — the fleet
-host** — which runs everything (fleet-agent, gateway, NATS, microVMs, and later Temporal).
+host** — which runs everything (mando-agent, gateway, NATS, microVMs, and later Temporal).
 No separate control plane.
 
 | Role | Machine | Needed for |
 |---|---|---|
 | **Fleet host** | Hetzner **Robot dedicated** (AX/EX), bare metal | everything |
-| Source hosting | GitHub org (Chelodo) + GitHub App | M3/M4 |
+| Source hosting | GitHub org (your GitHub organization) + GitHub App | PR workflow |
 
 Why dedicated, not Cloud: Hetzner **Cloud has no `/dev/kvm`** (no nested virtualisation),
-so Firecracker cannot run. The playbook's preflight refuses such a host on purpose
-(PLAN §7). Bare metal always exposes `vmx`/`svm` and Hetzner enables VT-x/AMD-V — no BIOS
+so Firecracker cannot run. The playbook's preflight refuses such a host on purpose.
+Bare metal always exposes `vmx`/`svm` and Hetzner enables VT-x/AMD-V — no BIOS
 change needed.
 
 ---
 
 ## 1. Order the dedicated server
 
-Any current **AX (AMD)** or **EX (Intel)** model works for M1. Size for your parallelism
-target (PLAN M6 = 5 concurrent VMs): **≥8 cores, 32–64 GB RAM, NVMe** is comfortable, since
-each guest later gets its own vCPUs/RAM plus a workspace volume on disk. For the M1 smoke
+Any current **AX (AMD)** or **EX (Intel)** model works. Size for your parallelism
+target (e.g. ~5 concurrent VMs): **≥8 cores, 32–64 GB RAM, NVMe** is comfortable, since
+each guest later gets its own vCPUs/RAM plus a workspace volume on disk. For the smoke
 test alone, anything works.
 
 ## 2. Install the OS (Ubuntu 22.04/24.04 LTS or Debian 12)
@@ -45,7 +45,7 @@ target).
 
 ## 3. Filesystem — XFS recommended, ext4 fine
 
-`fleet-agent` copies the golden rootfs on every launch with `cp --reflink=auto`: an instant
+`mando-agent` copies the golden rootfs on every launch with `cp --reflink=auto`: an instant
 copy-on-write clone on **XFS** (or Btrfs), or a **full copy on ext4**. So ext4 works — the
 fallback just copies the ~2 GB rootfs per launch (a couple of seconds on SSD, longer on
 spinning disks). **XFS is recommended** because it makes that copy instant, and you get to
@@ -91,24 +91,23 @@ ansible-playbook site.yml          # run twice → expect changed=0 the second t
 ansible-playbook smoke-test.yml    # expect: "smoke: PASS — microVM reached userspace"
 ```
 
-Those two runs are the M1 acceptance gate (PLAN §14): idempotent re-run, and a throwaway
+Those two runs are the acceptance gate: idempotent re-run, and a throwaway
 microVM booting to userspace.
 
 ## 5. Firewall
 
 No Hetzner hardware firewall is required — the on-host nftables ruleset governs guest
-egress. The host's own inbound (SSH now, the `fleet-agent` mTLS API in M2) is left open by
+egress. The host's own inbound (SSH now, the `mando-agent` mTLS API later) is left open by
 the ruleset; restrict SSH with `networking_mgmt_cidr`-style rules or the Robot firewall if
-you want defence in depth. (See the nftables design note in the M1 summary: deny-by-default
+you want defence in depth. (See the nftables design note: deny-by-default
 is enforced for the guest tap class, not for the host's own management ports.)
 
 ---
 
 ## Later milestones (not now)
 
-- **Control-plane services** (Temporal, webhook-rx, the credential minter — **M4**) run on
+- **Control-plane services** (Temporal, webhook-rx, the credential minter) run on
   **this same box**, not a separate machine. Guests still can't reach them (nftables confines
   the guest tap class to the anchor's DNS/gateway/NATS ports).
-- **GitHub** — migrate target repos to the **Chelodo org**, create the GitHub App
-  (`contents:write`, `pull_requests:write`, `checks:read`), and set branch protection
-  (**M3/M4**, PLAN §11).
+- **GitHub** — migrate target repos to your GitHub organization, create the GitHub App
+  (`contents:write`, `pull_requests:write`, `checks:read`), and set branch protection.

@@ -3,6 +3,22 @@
 /dist/
 *.test
 *.out
+dashboard/dashboard
+# Built binaries sometimes left at the repo root by `go build` (the real outputs live in bin/)
+/mando-worker
+/mando-reconciler
+/mando-agent
+/mando-gateway
+/mando-dispatch
+/mando-natsauth
+/nats-bridge
+/nats-sub
+/slack-gateway
+/webhook-rx
+/fc-supervisor
+
+# Internal planning doc — kept locally, never published to the public repo
+docs/PLAN.md
 
 # Python / tooling venvs
 .venv/
@@ -21,6 +37,7 @@ secrets/*
 *.vault
 .vault_pass
 *.key
+*.pem
 *.crt
 *.csr
 *.srl
