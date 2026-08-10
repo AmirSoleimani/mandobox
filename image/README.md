@@ -1,14 +1,14 @@
-# Golden guest image (M3)
+# Golden guest image
 
-Content-addressed `rootfs-<sha>.ext4.zst` the guest boots from (PLAN §7.2). `fc-supervisor`
+Content-addressed `rootfs-<sha>.ext4.zst` the guest boots from. `fc-supervisor`
 is PID 1 — no systemd, sshd, cron, dbus, or cloud-init.
 
 ## Contents
 
 Minimal Debian bookworm + Node LTS, **pinned** Claude Code, `git`, `gh`, `ripgrep`, `fd`,
-`jq`, and language runtimes/linters (Go + golangci-lint, Python + ruff). Per **D1** the guest
+`jq`, and language runtimes/linters (Go + golangci-lint, Python + ruff). The guest
 verifies with linters + language unit tests; the full docker-compose/e2e suite runs on the
-target repo's own **GitHub CI** (§6.1 `ci_status`, §11 `check_suite`) — so no Docker here.
+target repo's own **GitHub CI** (`ci_status`, `check_suite`) — so no Docker here.
 
 Pinned versions live as `ARG`s in `Dockerfile` and are recorded in `/etc/fleet-image-versions`
 inside the image. Bump them there.
@@ -32,9 +32,9 @@ CI: `.github/workflows/golden-image.yml` builds on changes to `image/`, the supe
 
 1. CI publishes `rootfs-<sha>.ext4.zst` to object storage.
 2. The fleet host caches it under `/var/lib/fleet/images/`.
-3. The workflow pins `image_sha` per PR and passes it to `fleet-agent`, which
-   `EnsureRootfs` (decompress) → reflink-copies it per launch (§7.1). Pinning the sha per
-   workflow keeps a PR on one image across resume rounds (§7.2).
+3. The workflow pins `image_sha` per PR and passes it to `mando-agent`, which
+   `EnsureRootfs` (decompress) → reflink-copies it per launch. Pinning the sha per
+   workflow keeps a PR on one image across resume rounds.
 
-The guest **kernel** is the pinned M1 CI kernel (`vmlinux-6.1.155`) — dropping Docker means
+The guest **kernel** is the pinned CI kernel (`vmlinux-6.1.155`) — dropping Docker means
 no custom kernel is needed.

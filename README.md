@@ -1,127 +1,111 @@
-# Agent VM Fleet
+# Mandobox
 
-Isolated microVMs on owned hardware that run coding agents and terminate every unit of
-work in a human-reviewed pull request. See [`docs/PLAN.md`](docs/PLAN.md) for the full
-PRD, invariants, and build order — that document is authoritative; this README only
-tracks implementation state.
+**Agent runtime infrastructure you host yourself — a fresh, disposable computer for every task.**
 
-**Scope:** a personal, **single-machine** tool (PLAN D5 = personal, not a product). One
-dedicated box runs the control-plane services and the fleet host together; there is no
-multi-tenancy and no separate control plane. See
-[`docs/decisions.md`](docs/decisions.md).
+Give an AI agent its own machine: an isolated, locked-down micro-VM, spun up for a single task and
+thrown away when it's done. Mandobox is the runtime that makes that safe and repeatable — many
+disposable computers running agents in parallel, on hardware you own, with keys that never leave it.
+Point it at your codebase and every task comes back as a pull request you review; nothing merges
+without you.
 
-## Trust zones
+*Coding-to-PR is the flagship workload today. Underneath, the runtime is general — the agent harness
+and the work it does are pluggable, not baked in.*
 
-| Zone | Where | Trust |
-|---|---|---|
-| Host (control-plane services + fleet-agent + gateway + NATS) | one Hetzner dedicated box (Robot AX/EX, `/dev/kvm`) | trusted |
-| Guest | Firecracker microVM, one per session | **untrusted** |
+---
 
-## Build order (PLAN §14)
+## See it in action
 
-| Milestone | Scope | Status |
-|---|---|---|
-| **M1** | Host provisioning (Ansible) | ✅ built — on-hardware acceptance pending |
-| **M2** | `fleet-agent`: launch / destroy / reconcile | ✅ built — on-hardware acceptance pending |
-| **M3** | Golden image + `fc-supervisor`, single shot | ✅ built — on-hardware acceptance pending |
-| M4 | Temporal `PRWorkflow`, full lifecycle | ⏳ not started |
-| M5 | Slack, cost, model routing | ⏳ not started |
-| M6 | Parallelism | ⏳ not started |
+> 🎥 **Demo coming soon.**
+>
+> <!-- Screen recording goes here. On GitHub you can drag-and-drop an .mp4/.mov straight into the
+>      README editor (or any issue/PR) to get a hosted URL, then paste it below this line. -->
 
-Do not start a milestone until the previous one's acceptance criteria (PLAN §14) pass.
+---
 
-> **Deploying?** Follow **[`docs/runbook.md`](docs/runbook.md)** — the linear operator guide
-> from bare Hetzner boxes through Ansible to a running fleet.
+## What you can do
 
-## Repository layout
+- **Delegate a task, get back a pull request** — "add a `/careers` page", "fix the login timeout",
+  "bump this dependency and fix the fallout." The agent reads the repo, makes the change, runs the
+  tests, and opens a PR.
+- **Run many at once** — each in its own disposable computer, without interfering.
+- **Review and steer on GitHub** — your PR comments and reviews drive the next round; the agent
+  replies and revises right in the thread.
+- **Or steer from Slack** — kick off a task, drop in a plan or spec file, and nudge it along.
+- **Watch it work live** — a built-in terminal streams its thinking, the commands it runs, and the
+  files it edits, and you can **type back to steer it**.
+- **Go hands-on** — open a running machine in full VS Code (in your browser) to poke around or edit
+  by hand.
 
-```
-docs/PLAN.md          Authoritative PRD and build order
-docs/hetzner-setup.md What to provision in Hetzner before M1
-docs/github-setup.md  GitHub App + branch protection (M3)
-ansible/              host provisioning + deploy roles (see ansible/README.md)
-image/                golden guest image build (Dockerfile + build.sh)  [M3]
-cmd/                  fleet-agent, fleet-reconciler, fc-supervisor, fleet-gateway
-internal/             session, fleetagent, reconcile, supervisor, gateway
-scripts/              gen-dev-certs.sh (dev mTLS PKI)
-.github/workflows/    golden-image.yml (CI image build)
-Makefile              build / test / vet / dist (cross-compile)
-```
+## How it works
 
-Go services land under `cmd/` and `internal/` as their milestones begin. See
-[`docs/hetzner-setup.md`](docs/hetzner-setup.md) for hardware prep.
+1. **You ask** — from Slack or the dashboard, pointing at a repo and describing the change.
+2. **It isolates** — a fresh, locked-down micro-VM boots just for this task.
+3. **The agent works** — reads the repo, makes the change, runs the tests, and writes an honest
+   summary, *including what it's unsure about.*
+4. **You review** — it opens a pull request and answers your comments in the thread; you can drop
+   into the running machine to look around or edit by hand.
+5. **You decide** — merge, request changes, or close. Merging cleans everything up.
 
-## M2 — fleet-agent (launch / destroy / reconcile)
+## Why it's built this way
 
-`fleet-agent` is the fleet host's mTLS microVM API (`POST/DELETE/GET /vms`, `/healthz`);
-`fleet-reconciler` kills orphaned VMs the authority no longer claims (PLAN §7.1, §7.7).
+- **You stay the reviewer.** Every result is a pull request. Nothing ships on its own.
+- **Your hardware, your keys.** Code and credentials never leave a machine you control, and the AI
+  provider key is never exposed to the agent's sandbox.
+- **One throwaway computer per task.** Each job runs in an isolated micro-VM, destroyed after. Agents
+  can't see each other and only reach the parts of the internet you allow.
+- **It runs in parallel.** Many tasks side by side, without stepping on each other.
+- **You talk to it where you already work** — Slack, GitHub, or a browser control room.
 
-```sh
-make test            # 31 unit tests across session / fleetagent / reconcile
-make dist            # cross-compile linux/amd64 binaries into bin/
-scripts/gen-dev-certs.sh secrets/fleet-tls <fleet-host-ip>   # dev mTLS PKI
-cd ansible && ansible-playbook deploy.yml                    # deploy to the fleet host
-```
+## The control room
 
-**Verified off-host:** unit tests, `go vet`, `gofmt`, and a live mTLS round-trip
-(`/healthz` + `GET /vms` succeed only with a client cert; certless clients are rejected at
-handshake). **Needs the box:** actual VM launch/destroy, orphan reaping within 12 min, and
-workspace survival across a destroy — these exercise jailer/Firecracker/KVM, which the
-driver isolates behind the `VMDriver` interface.
+A built-in dashboard: one private screen (reached over an SSH tunnel — no public exposure) to start
+tasks, watch an agent think and act in a live color-coded terminal, connect into a running machine,
+and manage models, connectors, costs, health, and secrets from one place.
 
-## M3 — golden image + fc-supervisor (single shot)
+→ **[Dashboard guide](dashboard/README.md)**
 
-The guest runs `fc-supervisor` as PID 1 (`internal/supervisor`): reads boot config from
-MMDS, refuses to run without NATS, runs Claude Code behind the host gateway, and opens a PR.
-Full e2e verification is delegated to the target repo's **GitHub CI** (D1); the guest runs
-only linters + language unit tests, so there is no Docker in the image.
+## Configure it
 
-- **Golden image** (`image/`) — content-addressed `rootfs-<sha>.ext4.zst`, built in CI
-  (`.github/workflows/golden-image.yml`) on the pinned M1 kernel.
-- **Egress gateway** (`internal/gateway`, `cmd/fleet-gateway`) — injects the real Anthropic
-  key host-side (guest holds only a session token), enforces a CONNECT allowlist for
-  git/registry traffic, scrubs the key from responses. One port (§10). LiteLLM slots in at M5.
-- **NATS** (`ansible/roles/nats`) — minimal control-plane transport (M3 dev, no auth; JWT
-  scoping in M4).
-- **GitHub App** — see [`docs/github-setup.md`](docs/github-setup.md).
+- **Box-wide defaults** in one file (or the dashboard): the model, machine size, how long an idle
+  machine stays warm, spend caps, and which agents/models are allowed.
+- **Per-repo settings** in an optional `.mandobox.yml`, so a project can ask for a bigger machine or
+  its own instructions — within the limits you set.
+- **Pluggable agents & providers** — Claude Code by default (OpenAI Codex as a second harness); run
+  on an API key or [your own Claude subscription](docs/subscription-auth.md).
 
-```sh
-make dist                                       # builds all four binaries
-printf '%s' "<real-anthropic-key>" > secrets/anthropic.key
-cd ansible && ansible-playbook build-image.yml  # golden image on the fleet host (mmdebstrap)
-ansible-playbook deploy.yml                      # fleet-agent + reconciler + gateway + NATS
-```
+→ **[Configuration guide](docs/configuration.md)** · [`mandobox.example.yml`](mandobox.example.yml)
 
-**Verified off-host:** the supervisor lifecycle (initial→PR, resume→push, agent-failure,
-no-changes) and the gateway (key injection, session-token stripping, allowlist, scrubbing)
-are unit-tested; the image build and Ansible roles are lint/syntax-clean. **Needs the box:**
-a hand-dispatched task producing a real App-bot PR on `agent/*`, with no credential in the
-guest, and a rejected push to `main`.
+## Roadmap
 
-## M1 — Host provisioning
+Anything that can describe a task can start one — today that's Slack, GitHub, and the dashboard.
+Next, we want work to reach the fleet from wherever it already lives, no new habits required
+(**planned/exploring**, not shipped):
 
-Provisions a Hetzner **dedicated** box to launch Firecracker microVMs: KVM preflight,
-Firecracker + jailer, guest kernel, deny-by-default nftables, host resolver, directory
-layout, and the host reaper timer.
+- **Connectors** — Linear / Jira / GitHub Issues (assign or label an issue → it opens the PR and
+  moves the ticket along), Discord / Teams, Sentry (turn a recurring error into a fix task),
+  scheduled chores, and a public API + webhooks.
+- **Beyond** — more agent harnesses, team accounts with roles, per-repo budgets & alerts, and saved
+  task templates.
 
-```sh
-cd ansible
-ansible-galaxy collection install -r requirements.yml
-# edit inventory/hosts.yml with your host, then:
-ansible-playbook site.yml
-ansible-playbook smoke-test.yml   # boots a throwaway microVM, asserts it reached userspace
-```
+Want a particular connector? [Open an issue](../../issues) — the roadmap follows what people reach for.
 
-### Pinned artifacts
+## Is this for you?
 
-| Artifact | Version | Source |
-|---|---|---|
-| Firecracker + jailer | v1.16.1 | GitHub releases (sha256-verified) |
-| Guest kernel | 6.1.155 | Firecracker CI bucket (sha256-verified) |
+Mandobox is **self-hosted infrastructure**, not a one-click app: you run a server that supports
+hardware virtualization, a GitHub App, and an AI provider key. It's built for **developers and teams
+who want their own AI agent fleet on their own hardware.** Setup is scripted end-to-end, with a
+friendly guide. If you want a hosted product with zero setup, this isn't that.
 
-Versions and checksums live in `ansible/group_vars/fleet.yml` and each role's
-`defaults/main.yml`; bump them there.
+## Get started
 
-> **This must run on real hardware.** Hetzner Cloud has no nested virtualisation, so
-> there is no `/dev/kvm`; the playbook's preflight fails loudly on any host without it.
-> `ansible-lint` and `--syntax-check` are the only checks that pass off-host.
+- **[Getting started](docs/getting-started.md)** — the friendly, start-to-finish path.
+- **[Server setup](docs/hetzner-setup.md)** · **[GitHub App](docs/github-setup.md)** ·
+  **[Slack](docs/slack.md)** — the pieces it connects to.
+- **[Operator runbook](docs/runbook.md)** — the detailed deploy guide and every config knob.
+- **[How it's designed](docs/architecture.md)** — the full architecture: durable [Temporal](https://temporal.io/)
+  workflows over [Firecracker](https://firecracker-microvm.github.io/) micro-VMs, and the reasoning
+  behind it.
+
+## License
+
+[MIT](LICENSE). Contributions welcome.
