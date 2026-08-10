@@ -1,7 +1,7 @@
 ---
 galaxy_info:
   author: Chelodo
-  description: Deploy fleet-agent and fleet-reconciler (M2) with mTLS and systemd units.
+  description: Deploy mando-agent with mTLS and systemd units (the reaper is now the worker's scheduled ReconcileWorkflow).
   license: MIT
   min_ansible_version: "2.15"
   platforms:

@@ -35,6 +35,31 @@ func TestAgentEnvStripsAnthropicAPIKey(t *testing.T) {
 	}
 }
 
+func TestAgentEnvSubscriptionMode(t *testing.T) {
+	env, err := agentEnv([]string{"PATH=/usr/bin"}, AgentSpec{
+		BaseURL: "http://172.31.0.1:8080", AuthToken: "sess-tok",
+		Auth: "subscription", OAuthToken: "sk-ant-oat01-xyz",
+	})
+	if err != nil {
+		t.Fatalf("agentEnv: %v", err)
+	}
+	// Subscription mode: OAuth token set; NO gateway base URL / auth token; proxy still enforced.
+	if !slices.Contains(env, "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xyz") {
+		t.Error("subscription mode must set CLAUDE_CODE_OAUTH_TOKEN")
+	}
+	for _, e := range env {
+		if strings.HasPrefix(e, "ANTHROPIC_BASE_URL=") {
+			t.Errorf("subscription mode must NOT set ANTHROPIC_BASE_URL (Claude talks to Anthropic directly): %q", e)
+		}
+		if strings.HasPrefix(e, "ANTHROPIC_AUTH_TOKEN=") {
+			t.Errorf("subscription mode must NOT set ANTHROPIC_AUTH_TOKEN: %q", e)
+		}
+	}
+	if !slices.Contains(env, "HTTPS_PROXY=http://172.31.0.1:8080") {
+		t.Error("guest must still egress only through the CONNECT proxy in subscription mode")
+	}
+}
+
 func TestClaudeArgs(t *testing.T) {
 	initial := claudeArgs(AgentSpec{Prompt: "do it", Model: "claude-sonnet-5"})
 	if !slices.Contains(initial, "-p") || !slices.Contains(initial, "stream-json") ||

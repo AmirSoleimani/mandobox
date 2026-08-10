@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/chelodo/fleet/internal/session"
+	"github.com/chelodo/mandobox/internal/session"
 )
 
 type fakeDriver struct {

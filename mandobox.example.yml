@@ -1,0 +1,30 @@
+# Operator config for mandobox — copy to /etc/fleet/mandobox.yml (or point MANDOBOX_CONFIG at it)
+# and edit. Everything here is optional; omitted keys fall back to the built-in defaults, which
+# reproduce mandobox's out-of-the-box behavior. See docs/configuration.md.
+#
+# This sets box-wide DEFAULTS every session inherits, and LIMITS a repo's committed .mandobox.yml
+# is clamped to (over-limit requests are adjusted, and the repo author is warned in the thread).
+
+defaults:
+  agent: claude                 # claude | codex | …  (must be in limits.agents_allowed)
+  model: claude-sonnet-5        # must be in limits.models_allowed
+  resources: medium             # a profile name from limits.resources.profiles
+  keep_alive: 15m               # how long a warm VM idles before parking
+  review:
+    max_rounds: 5
+
+limits:
+  resources:
+    profiles:
+      small:  { vcpus: 1, mem: 2048, disk: 4096 }    # mem/disk in MiB
+      medium: { vcpus: 2, mem: 4096, disk: 8192 }
+      large:  { vcpus: 4, mem: 8192, disk: 16384 }
+    max_profile: large          # a repo may not request a bigger profile than this
+  cost_ceiling_usd: 15          # per-session hard cap (operator-only)
+  hard_ttl: 336h                # 14 days — the workflow lives as long as its PR, bounded by this
+  concurrency: 8                # operator-only
+  agents_allowed: [claude]      # which harnesses a repo's .mandobox.yml may pick
+  models_allowed: [claude-sonnet-5, claude-haiku-4-5-20251001]
+  # To enable OpenAI's Codex as a second harness (see docs/configuration.md "Enabling Codex"):
+  #   agents_allowed: [claude, codex]
+  #   models_allowed: [claude-sonnet-5, claude-haiku-4-5-20251001, gpt-5-codex]

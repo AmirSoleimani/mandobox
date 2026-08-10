@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+{% set gw_args = "-listen " ~ egress_gateway_listen ~ " -upstream " ~ egress_gateway_upstream ~ " -key-file " ~ egress_gateway_key_file ~ " -key-header " ~ egress_gateway_key_header ~ " -mode " ~ egress_gateway_mode %}
+{% if egress_gateway_allowlist | length > 0 %}{% set gw_args = gw_args ~ " -allowlist-file " ~ egress_gateway_conf_dir ~ "/allowlist" %}{% endif %}
+[Unit]
+Description=mando-gateway — host egress proxy (PLAN §7.5, §10)
+After=network-online.target mando-net-anchor.service litellm.service
+Wants=network-online.target mando-net-anchor.service
+
+[Service]
+Type=exec
+User=root
+ExecStart={{ egress_gateway_bin }} {{ gw_args }}
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -11,9 +11,20 @@ Environment=WEBHOOK_ADDR={{ control_plane_webhook_addr }}
 Environment=TEMPORAL_ADDRESS={{ control_plane_temporal_address }}
 Environment=TEMPORAL_NAMESPACE={{ control_plane_temporal_namespace }}
 EnvironmentFile={{ control_plane_conf_dir }}/webhook-secret.env
+# control-plane.env supplies GITHUB_BOT_USER — the fallback that keeps the agent's own comments
+# from being routed back as feedback (echo loop). The primary guard is the payload's user.type=="Bot".
+EnvironmentFile={{ control_plane_conf_dir }}/control-plane.env
 ExecStart=/usr/local/bin/webhook-rx
 Restart=on-failure
 RestartSec=3
+# Hardening (defense-in-depth): this parses untrusted GitHub payloads on a public-facing path.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
 
 [Install]
 WantedBy=multi-user.target

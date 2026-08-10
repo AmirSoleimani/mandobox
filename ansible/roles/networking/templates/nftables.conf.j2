@@ -9,7 +9,7 @@
 #   - the host egress proxy ({{ fleet_host_gw_addr }} tcp {{ fleet_egress_proxy_port }})
 #   - the host NATS server  ({{ fleet_host_gw_addr }} tcp {{ fleet_nats_port }})
 # Everything else — other guests, the host's sensitive ports (incl. Temporal 7233 and the
-# fleet-agent API), the wider internet — is dropped and counted.
+# mando-agent API), the wider internet — is dropped and counted.
 #
 # Because all reachable services are host-local (input chain), guests never forward anywhere:
 # the forward chain is default-drop with no permit rules, and no NAT is needed. The input
@@ -17,7 +17,7 @@
 # guest inbound is denied by the explicit tap catch-all drop.
 #
 # Only "table inet fleet" is (re)defined, non-destructively, so a reload leaves other tables
-# intact — including the separate per-tap table fleet-agent adds at launch.
+# intact — including the separate per-tap table mando-agent adds at launch.
 
 add table inet fleet
 delete table inet fleet

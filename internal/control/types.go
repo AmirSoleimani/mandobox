@@ -1,6 +1,6 @@
 // Package control is the Temporal control plane: the PRWorkflow that owns a task from dispatch
 // through the human review loop to workspace teardown, plus the activities that reach the
-// fleet-agent (mTLS) and NATS. Policy lives here and nowhere else (PLAN §6, invariant I6).
+// mando-agent (mTLS) and NATS. Policy lives here and nowhere else (PLAN §6, invariant I6).
 package control
 
 import "time"
@@ -17,6 +17,8 @@ const (
 	SignalCIStatus        = "ci_status"
 	SignalUserMessage     = "user_message"
 	SignalAbort           = "abort"
+	SignalAttach          = "attach" // operator wants a browser VS Code into this session's VM
+	SignalDetach          = "detach" // operator is done — stop the tunnel
 )
 
 // Search-attribute keys (registered on the `fleet` namespace by the temporal role, PLAN §11).
@@ -57,6 +59,8 @@ func (p Policy) withDefaults() Policy {
 	}
 	if p.KeepAlive == 0 {
 		// Generous warm window so an active back-and-forth stays warm (plan's keep_alive_threshold).
+		// A negative KeepAlive is the "never park" sentinel (keep the VM warm for the PR's life,
+		// still bounded by HardTTL) — left untouched here; only the unset (0) case gets the default.
 		p.KeepAlive = 15 * time.Minute
 	}
 	return p
@@ -72,9 +76,13 @@ type WorkflowInput struct {
 	Prompt     string `json:"prompt"`
 	ImageSHA   string `json:"image_sha"`
 	Model      string `json:"model"`
-	VCPUs      int    `json:"vcpus"`
-	MemMiB     int    `json:"mem_mib"`
-	Policy     Policy `json:"policy"`
+	// Agent (harness: claude | codex | …) and Instructions (per-repo system-prompt additions) come
+	// from the resolved .mandobox.yml config (docs/configuration.md).
+	Agent        string `json:"agent,omitempty"`
+	Instructions string `json:"instructions,omitempty"`
+	VCPUs        int    `json:"vcpus"`
+	MemMiB       int    `json:"mem_mib"`
+	Policy       Policy `json:"policy"`
 	// SlackChannel overrides the worker's default channel (set when dispatched from Slack so
 	// the thread lands in the channel where /fleet was run). Empty → the default channel.
 	SlackChannel string `json:"slack_channel"`
@@ -97,6 +105,9 @@ type State struct {
 	SlackChannel        string   `json:"slack_channel"`
 	SlackThreadTS       string   `json:"slack_thread_ts"`
 	Phase               string   `json:"phase"` // human-readable current step
+	// CostCeilingReached latches once cumulative spend hits Policy.CostCeilingUSD: further agent turns
+	// are paused (feedback still queues) so untrusted PR/Slack input can't drive unbounded LLM spend.
+	CostCeilingReached bool `json:"cost_ceiling_reached,omitempty"`
 }
 
 const (
@@ -122,6 +133,7 @@ type ReviewSubmittedSignal struct {
 	State      string `json:"state"` // e.g. "changes_requested", "approved", "commented"
 	Body       string `json:"body"`
 	Author     string `json:"author"`
+	ReviewID   int64  `json:"review_id,omitempty"` // so the thread reconcile won't re-deliver it
 	DeliveryID string `json:"delivery_id"`
 }
 
@@ -138,10 +150,23 @@ type CIStatusSignal struct {
 
 type UserMessageSignal struct {
 	Text string `json:"text"`
+	// Attachments is the concatenated text of any files the operator dropped in the thread (a plan,
+	// spec, notes). It is folded into the instruction the agent acts on, but never into the intent
+	// classification — so a document that mentions "attach"/"detach" can't hijack the routing.
+	Attachments string `json:"attachments,omitempty"`
 }
 
 type AbortSignal struct {
 	Reason string `json:"reason"`
+}
+
+// AttachSignal / DetachSignal carry who asked, for the thread note.
+type AttachSignal struct {
+	Requester string `json:"requester"`
+}
+
+type DetachSignal struct {
+	Requester string `json:"requester"`
 }
 
 // ---- activity I/O ----
@@ -149,12 +174,17 @@ type AbortSignal struct {
 // Credentials are the Tier-1, per-session tokens the guest holds (I1, §9). The Anthropic key
 // is NEVER here — the egress gateway injects it host-side; the guest gets a session token.
 type Credentials struct {
-	GitHubToken   string `json:"github_token"`
-	LLMAuthToken  string `json:"llm_auth_token"`
-	LLMBaseURL    string `json:"llm_base_url"`
-	NATSCreds     string `json:"nats_creds"`
-	GitHubBotUser string `json:"github_bot_user"`
-	GitHubBotMail string `json:"github_bot_email"`
+	GitHubToken       string `json:"github_token"`
+	LLMAuthToken      string `json:"llm_auth_token"`
+	LLMBaseURL        string `json:"llm_base_url"`
+	NATSCreds         string `json:"nats_creds"`
+	GitHubBotUser     string `json:"github_bot_user"`
+	GitHubBotMail     string `json:"github_bot_email"`
+	VSCodeTunnelToken string `json:"vscode_tunnel_token,omitempty"`
+	// VSCodeTunnelHostname is the hostname the tunnel token was minted under. The VS Code CLI
+	// binds its stored auth to the hostname, so the guest must adopt this exact name or `code
+	// tunnel` treats itself as logged out and falls back to the device login (§remote-attach).
+	VSCodeTunnelHostname string `json:"vscode_tunnel_hostname,omitempty"`
 }
 
 // LaunchParams drives one LaunchVM call. Mode is "initial" or "resume"; on resume the guest
@@ -165,9 +195,23 @@ type LaunchParams struct {
 	Mode         string   // supervisor.ModeInitial | ModeResume
 	Instructions []string // resume: the batched review feedback
 	NATSURL      string
+	// HeadBranch is the agent branch to push/PR — a task-derived name the workflow chose. Injected so
+	// the guest uses the exact same ref the workflow reconciles by. Empty → the guest's default.
+	HeadBranch string
+	// Preamble overrides (operator box config, read by the LaunchVM activity from files — not by the
+	// deterministic workflow). Empty → the guest uses its built-in default preamble.
+	PreambleAutonomous  string
+	PreambleCollaborate string
+	// Agent auth (operator box config, read by the LaunchVM activity). Auth "subscription" injects the
+	// OAuthToken so the guest's Claude Code runs on the operator's plan; "" / "api_key" → the gateway.
+	Auth       string
+	OAuthToken string
+	// CheapModel is the active provider's helper model (commit messages, intent routing), passed to
+	// the guest so its helper calls run on the same provider as the agent.
+	CheapModel string
 }
 
-// LaunchResult is the fleet-agent launch response plus the session it applies to.
+// LaunchResult is the mando-agent launch response plus the session it applies to.
 type LaunchResult struct {
 	Tap     string `json:"tap"`
 	Chroot  string `json:"chroot"`

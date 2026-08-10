@@ -1,7 +1,7 @@
 ---
 galaxy_info:
   author: Chelodo
-  description: Deploy fleet-gateway, the host egress proxy (Anthropic key injection + allowlist).
+  description: Deploy mando-gateway, the host egress proxy (Anthropic key injection + allowlist).
   license: MIT
   min_ansible_version: "2.15"
   platforms:

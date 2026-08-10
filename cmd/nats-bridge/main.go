@@ -13,7 +13,16 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/chelodo/mandobox/internal/session"
 	"github.com/nats-io/nats.go"
+)
+
+// Archive caps bound guest-controlled writes to the shared host disk (the NATS bus is host-local, so
+// a guest could otherwise loop-publish log lines and fill /var/lib/fleet — the same volume as
+// Temporal/Postgres). Past a cap, further lines for that session/kind are dropped (logged once).
+const (
+	maxSessionBytes = 256 << 20 // 256 MiB per (session,kind) file
+	maxTotalBytes   = 8 << 30   // 8 GiB across all archives this process
 )
 
 func main() {
@@ -23,13 +32,21 @@ func main() {
 		log.Fatalf("log dir: %v", err)
 	}
 
-	nc, err := nats.Connect(url, nats.Name("nats-bridge"), nats.MaxReconnects(-1))
+	// Once NATS auth is provisioned, connect with the broad service creds (agent.>). An absent file →
+	// legacy unauthenticated connect, so this is safe to deploy before the server cutover.
+	opts := []nats.Option{nats.Name("nats-bridge"), nats.MaxReconnects(-1)}
+	if creds := env("MANDO_NATS_SERVICE_CREDS", "/etc/fleet/nats-service.creds"); creds != "" {
+		if _, err := os.Stat(creds); err == nil {
+			opts = append(opts, nats.UserCredentials(creds))
+		}
+	}
+	nc, err := nats.Connect(url, opts...)
 	if err != nil {
 		log.Fatalf("nats connect: %v", err)
 	}
 	defer nc.Close()
 
-	w := &writers{dir: logDir, files: map[string]*os.File{}}
+	w := &writers{dir: logDir, files: map[string]*os.File{}, size: map[string]int64{}, dropped: map[string]bool{}}
 	defer w.closeAll()
 
 	for _, kind := range []string{"event", "log", "heartbeat"} {
@@ -46,50 +63,67 @@ func main() {
 	<-ch
 }
 
-// writers holds one append file per (session, kind), opened lazily.
+// writers holds one append file per (session, kind), opened lazily, with per-file and aggregate byte
+// caps so a guest can't fill the host disk through the archive path.
 type writers struct {
-	dir   string
-	mu    sync.Mutex
-	files map[string]*os.File
+	dir     string
+	mu      sync.Mutex
+	files   map[string]*os.File
+	size    map[string]int64 // bytes written per key (seeded from the file on open)
+	dropped map[string]bool  // key → cap reached (log-once)
+	total   int64            // aggregate bytes across all archives
 }
 
 func (w *writers) handle(subject, kind string, data []byte) {
 	sid := sessionFromSubject(subject)
-	if sid == "" {
-		return
-	}
-	if kind == "heartbeat" {
-		return // liveness only; not archived
-	}
-	f, err := w.fileFor(sid, kind)
-	if err != nil {
-		log.Printf("open %s/%s: %v", sid, kind, err)
+	// The subject is guest-controlled; only a well-formed session id may become a filesystem path
+	// (session.Pattern has no "." or "/", so it can't traverse). Heartbeats are liveness only.
+	if sid == "" || !session.Pattern.MatchString(sid) || kind == "heartbeat" {
 		return
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	f, key, err := w.fileForLocked(sid, kind)
+	if err != nil {
+		log.Printf("open %s/%s: %v", sid, kind, err)
+		return
+	}
+	n := int64(len(data)) + 1
+	if w.size[key]+n > maxSessionBytes || w.total+n > maxTotalBytes {
+		if !w.dropped[key] {
+			w.dropped[key] = true
+			log.Printf("nats-bridge: archive cap reached for %s/%s — dropping further lines", sid, kind)
+		}
+		return
+	}
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		log.Printf("write %s/%s: %v", sid, kind, err)
+		return
 	}
+	w.size[key] += n
+	w.total += n
 	if kind == "event" {
 		log.Printf("event %s: %s", sid, strings.TrimSpace(string(data)))
 	}
 }
 
-func (w *writers) fileFor(sid, kind string) (*os.File, error) {
+// fileForLocked returns the append file for (sid,kind); the caller must hold w.mu.
+func (w *writers) fileForLocked(sid, kind string) (*os.File, string, error) {
 	key := sid + "." + kind
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	if f, ok := w.files[key]; ok {
-		return f, nil
+		return f, key, nil
 	}
 	path := filepath.Join(w.dir, sid+"."+kind+".jsonl")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
 	if err != nil {
-		return nil, err
+		return nil, key, err
 	}
 	w.files[key] = f
-	return f, nil
+	if fi, err := f.Stat(); err == nil { // seed the counter from any existing file (survives restart)
+		w.size[key] = fi.Size()
+		w.total += fi.Size()
+	}
+	return f, key, nil
 }
 
 func (w *writers) closeAll() {

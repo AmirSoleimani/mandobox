@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"net/netip"
 
-	"github.com/chelodo/fleet/internal/session"
+	"github.com/chelodo/mandobox/internal/session"
 )
 
 // prefixLen is the per-VM point-to-point subnet size. A /30 gives four addresses:
 // network, host (.1), guest (.2), broadcast — no shared bridge (PLAN §7.4, I3).
 const prefixLen = 30
 
-// GuestNet is the network configuration fleet-agent allocates for one VM. It is injected
+// GuestNet is the network configuration mando-agent allocates for one VM. It is injected
 // into MMDS so the guest supervisor can configure eth0 statically (§8.1) — no DHCP.
 type GuestNet struct {
 	Tap       string `json:"tap"`

@@ -1,14 +1,21 @@
-module github.com/chelodo/fleet
+module github.com/chelodo/mandobox
 
 go 1.25.4
 
+// Pinned to a patched toolchain: go1.25.12 fixes the call-reachable crypto/tls + net/url stdlib CVEs
+// govulncheck flagged (incl. a guest-triggerable gateway DoS). Bump deliberately after re-scanning.
+toolchain go1.25.12
+
 require (
+	github.com/nats-io/jwt/v2 v2.8.2
 	github.com/nats-io/nats.go v1.52.0
+	github.com/nats-io/nkeys v0.4.16
 	github.com/slack-go/slack v0.27.0
 	github.com/stretchr/testify v1.11.1
 	go.temporal.io/api v1.63.4
 	go.temporal.io/sdk v1.47.0
 	golang.org/x/sys v0.45.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -21,14 +28,13 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
-	github.com/nats-io/nkeys v0.4.15 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/nexus-rpc/nexus-proto-annotations v0.1.0 // indirect
 	github.com/nexus-rpc/sdk-go v0.6.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
@@ -37,5 +43,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/grpc v1.82.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

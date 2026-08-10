@@ -26,6 +26,8 @@ func newTestSupervisor(t *testing.T, cfg BootConfig) (*Supervisor, *fakeTranspor
 	sup.git.tokenPath = filepath.Join(runDir, "token")
 	// Park almost immediately after the turn so Run() returns without a live control plane.
 	sup.keepAlive = 5 * time.Millisecond
+	// No gateway in unit tests: fall back to the static commit message instead of a real HTTP call.
+	sup.commitMsg = func(context.Context, string, string, string, string) string { return "" }
 	return sup, ft, fr, fa
 }
 
@@ -134,6 +136,28 @@ func TestRunAgentFailurePublishesAgentFailed(t *testing.T) {
 	}
 	if fr.ran("gh pr create") {
 		t.Error("no PR should be opened on agent failure")
+	}
+}
+
+func TestCommitMessageUsesGeneratedThenFallsBack(t *testing.T) {
+	sup, _, _, fa := newTestSupervisor(t, mustCfg(t, validMMDS))
+
+	// When the generator returns a message, it is used verbatim.
+	sup.commitMsg = func(_ context.Context, req, summary, _, _ string) string {
+		if req == "" || summary != "did the thing" {
+			t.Errorf("generator got req=%q summary=%q", req, summary)
+		}
+		return "feat: add a healthcheck endpoint"
+	}
+	if got := sup.commitMessageFor(context.Background(), fa.result, "stat", "patch"); got != "feat: add a healthcheck endpoint" {
+		t.Errorf("generated message = %q", got)
+	}
+
+	// When it returns "", we fall back to the static template (never an empty commit message).
+	sup.commitMsg = func(context.Context, string, string, string, string) string { return "" }
+	if got := sup.commitMessageFor(context.Background(), fa.result, "stat", "patch"); got == "" ||
+		!strings.HasPrefix(got, "agent: ") {
+		t.Errorf("fallback message = %q, want the static 'agent: …' template", got)
 	}
 }
 

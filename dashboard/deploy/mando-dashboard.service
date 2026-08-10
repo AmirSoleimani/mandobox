@@ -1,0 +1,23 @@
+[Unit]
+Description=mandobox management console (localhost-only, reached over SSH tunnel)
+Documentation=https://github.com/chelodo/mandobox
+After=network-online.target temporal.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as root: it edits /etc/fleet/mandobox.yml and drives update-tools.sh, which chroots and
+# writes golden images under /var/lib/fleet. The service binds to 127.0.0.1 only — access is gated
+# by who can reach the box (SSH tunnel), it has no auth of its own.
+User=root
+ExecStart=/usr/local/bin/mando-dashboard -addr 127.0.0.1:8087
+# Optional overrides (TEMPORAL_ADDRESS, TEMPORAL_NAMESPACE, MANDOBOX_CONFIG, MANDO_*).
+EnvironmentFile=-/etc/fleet/dashboard.env
+Restart=on-failure
+RestartSec=3
+# Localhost bind means no external exposure; keep the process otherwise unprivileged where possible.
+NoNewPrivileges=false
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

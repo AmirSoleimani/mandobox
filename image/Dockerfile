@@ -7,7 +7,7 @@
 # another produces behaviour changes mid-review (§7.2).
 
 # --- Stage 1: build fc-supervisor (static) ---
-ARG GO_VERSION=1.25.5
+ARG GO_VERSION=1.25.12
 FROM golang:${GO_VERSION}-bookworm AS supervisor
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -21,7 +21,7 @@ ARG NODE_MAJOR=22
 ARG CLAUDE_CODE_VERSION=2.1.220
 ARG GH_VERSION=2.96.0
 ARG GOLANGCI_LINT_VERSION=2.12.2
-ARG GO_VERSION=1.25.5
+ARG GO_VERSION=1.25.12
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Tools Claude Code shells out to constantly; their absence degrades output in ways that look

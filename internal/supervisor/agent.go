@@ -22,6 +22,9 @@ type AgentSpec struct {
 	ClaudeSessionID string // Claude's own session UUID, captured from the initial run
 	BaseURL         string // host LLM gateway
 	AuthToken       string // per-session bearer token
+	SystemPrompt    string // per-repo instructions appended to the agent's system prompt (§config)
+	Auth            string // "" | "api_key" (default, via gateway) | "subscription" (OAuth, direct)
+	OAuthToken      string // Claude subscription OAuth token, used only when Auth == "subscription"
 }
 
 // AgentRunner runs the coding agent. It is an interface so another harness could slot in
@@ -81,6 +84,9 @@ func claudeArgs(spec AgentSpec) []string {
 	if spec.Model != "" {
 		args = append(args, "--model", spec.Model)
 	}
+	if spec.SystemPrompt != "" { // per-repo .mandobox.yml instructions, on top of the repo's CLAUDE.md
+		args = append(args, "--append-system-prompt", spec.SystemPrompt)
+	}
 	if spec.Resume && spec.ClaudeSessionID != "" {
 		args = append(args, "--resume", spec.ClaudeSessionID)
 	}
@@ -98,9 +104,8 @@ func agentEnv(base []string, spec AgentSpec) ([]string, error) {
 		}
 		out = append(out, e)
 	}
+	// The guest always egresses only through the host CONNECT proxy.
 	out = append(out,
-		"ANTHROPIC_BASE_URL="+spec.BaseURL,
-		"ANTHROPIC_AUTH_TOKEN="+spec.AuthToken,
 		"HTTPS_PROXY="+spec.BaseURL,
 		"HTTP_PROXY="+spec.BaseURL,
 		"NO_PROXY=169.254.169.254,localhost,127.0.0.1",
@@ -109,6 +114,19 @@ func agentEnv(base []string, spec AgentSpec) ([]string, error) {
 		// which the microVM is. Without this the headless agent cannot auto-approve bash tools.
 		"IS_SANDBOX=1",
 	)
+	if spec.Auth == "subscription" {
+		// Subscription mode (single-user, docs/subscription-auth.md): Claude Code authenticates on the
+		// operator's plan with a long-lived OAuth token and talks to api.anthropic.com DIRECTLY (that
+		// host is allowlisted), so we do NOT set ANTHROPIC_BASE_URL. The token lives in the guest —
+		// the accepted trade-off for flat-rate, single-user use.
+		out = append(out, "CLAUDE_CODE_OAUTH_TOKEN="+spec.OAuthToken)
+	} else {
+		// Default: route through the host gateway on a per-session token; the real key stays host-side.
+		out = append(out,
+			"ANTHROPIC_BASE_URL="+spec.BaseURL,
+			"ANTHROPIC_AUTH_TOKEN="+spec.AuthToken,
+		)
+	}
 	if slices.ContainsFunc(out, isAnthropicAPIKey) {
 		return nil, errors.New("I9 violation: ANTHROPIC_API_KEY present in agent environment")
 	}

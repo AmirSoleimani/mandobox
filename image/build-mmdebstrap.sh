@@ -32,9 +32,16 @@ esac
 
 NODE_MAJOR="${NODE_MAJOR:-22}"
 CLAUDE_CODE_VERSION="${CLAUDE_CODE_VERSION:-2.1.220}"
+# Codex CLI is baked into the image by default so switching harnesses is a pure config toggle
+# (mandobox.yml agents_allowed) with no image rebuild — "available, not enabled". Set CODEX_VERSION=""
+# to omit it and slim the image. Pin a concrete version once you've verified one.
+CODEX_VERSION="${CODEX_VERSION:-0.147.0}"   # pinned — never "latest" (reproducible, reviewed bumps)
 GH_VERSION="${GH_VERSION:-2.96.0}"
 GOLANGCI_LINT_VERSION="${GOLANGCI_LINT_VERSION:-2.12.2}"
-GO_VERSION="${GO_VERSION:-1.25.5}"
+GO_VERSION="${GO_VERSION:-1.25.12}"
+# sha256 of the pinned Go toolchain tarball — verified before install (a poisoned toolchain would
+# taint every guest build). Update alongside GO_VERSION (value from https://go.dev/dl/).
+GO_SHA256="${GO_SHA256:-234828b7a89e0e303d2556310ee549fbcf253d28de937bac3da13d6294262ac1}"
 
 [ -x "$SUPERVISOR_BIN" ] || { echo "build: $SUPERVISOR_BIN not found/executable" >&2; exit 2; }
 for t in mmdebstrap mke2fs zstd curl; do
@@ -54,7 +61,7 @@ trap cleanup EXIT
 echo "build: mmdebstrap base (${ID:-debian} ${SUITE}, components ${COMPONENTS})"
 # minbase omits apt (it is priority:important, not required); the chroot installers need it.
 mmdebstrap --variant=minbase --components="$COMPONENTS" \
-  --include=apt,ca-certificates,curl,gnupg,git,jq,ripgrep,fd-find,python3,python3-venv,openssh-client,less,procps,iproute2,e2fsprogs \
+  --include=apt,ca-certificates,curl,gnupg,git,jq,ripgrep,fd-find,python3,python3-venv,python3-pip,openssh-client,less,procps,iproute2,e2fsprogs \
   "$SUITE" "$ROOTFS" "$MIRROR"
 
 # --- run installers inside the rootfs (needs network + pseudo-filesystems) ---
@@ -73,6 +80,11 @@ ln -sf "\$(command -v fdfind)" /usr/local/bin/fd
 curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
 apt-get install -y --no-install-recommends nodejs
 npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+# Optional: OpenAI Codex CLI as a second harness (only when CODEX_VERSION is set). Non-fatal so a
+# bad/unavailable version never breaks the image build.
+if [ -n "${CODEX_VERSION}" ]; then
+  npm install -g "@openai/codex@${CODEX_VERSION}" || echo "WARN: codex install failed (optional harness)"
+fi
 npm cache clean --force
 
 # GitHub CLI.
@@ -80,8 +92,15 @@ curl -fsSL -o /tmp/gh.tgz "https://github.com/cli/cli/releases/download/v${GH_VE
 tar -xzf /tmp/gh.tgz -C /tmp
 install -m 0755 "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
 
+# VS Code CLI — headless 'code tunnel' lets a trusted operator open a browser VS Code into a live
+# VM to inspect/edit (human attach). The standalone-CLI archive is a single 'code' binary.
+curl -fsSL -o /tmp/vscode-cli.tgz "https://update.code.visualstudio.com/latest/cli-linux-x64/stable"
+tar -xzf /tmp/vscode-cli.tgz -C /usr/local/bin
+test -x /usr/local/bin/code || { echo "vscode cli: 'code' not extracted"; exit 1; }
+
 # Go toolchain + golangci-lint.
 curl -fsSL -o /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+echo "${GO_SHA256}  /tmp/go.tgz" | sha256sum -c - || { echo "build: go toolchain checksum mismatch" >&2; exit 2; }
 tar -C /usr/local -xzf /tmp/go.tgz
 curl -fsSL -o /tmp/gcl.tgz "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz"
 tar -xzf /tmp/gcl.tgz -C /tmp

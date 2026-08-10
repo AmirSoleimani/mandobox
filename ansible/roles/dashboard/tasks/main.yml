@@ -1,0 +1,53 @@
+---
+- name: Check the mando-dashboard binary exists on the controller
+  ansible.builtin.stat:
+    path: "{{ dashboard_dist_dir }}/mando-dashboard"
+  delegate_to: localhost
+  run_once: true
+  become: false
+  register: dashboard_bin_stat
+
+- name: Assert the dashboard binary was built
+  ansible.builtin.assert:
+    that:
+      - dashboard_bin_stat.stat.exists
+    fail_msg: "Missing {{ dashboard_dist_dir }}/mando-dashboard. Run `make dist` (or `make dist-dashboard`) on the controller first."
+  run_once: true
+
+- name: Install the mando-dashboard binary
+  ansible.builtin.copy:
+    src: "{{ dashboard_dist_dir }}/mando-dashboard"
+    dest: "{{ dashboard_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart mando-dashboard
+
+- name: Install the dashboard env file
+  ansible.builtin.template:
+    src: dashboard.env.j2
+    dest: "{{ dashboard_conf_dir }}/dashboard.env"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart mando-dashboard
+
+- name: Install the dashboard systemd unit
+  ansible.builtin.template:
+    src: mando-dashboard.service.j2
+    dest: /etc/systemd/system/mando-dashboard.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd daemon (dashboard)
+    - Restart mando-dashboard
+
+- name: Apply unit changes before enabling
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start mando-dashboard
+  ansible.builtin.systemd_service:
+    name: mando-dashboard
+    enabled: true
+    state: started

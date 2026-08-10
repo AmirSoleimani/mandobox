@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/chelodo/fleet/internal/session"
+	"github.com/chelodo/mandobox/internal/session"
 )
 
 // Transport carries messages between the guest and the control plane. It is an interface so
@@ -70,6 +70,8 @@ const (
 	EventAgentFailed = "agent_failed"
 	EventNeedsInput  = "needs_input"
 	EventSessionIdle = "session_idle" // the warm VM idled out and is powering off (§6.1 keep-alive)
+	EventTunnel      = "tunnel"       // human attach: `code tunnel` output (login prompt + URL) — Info
+	EventDetached    = "detached"     // human attach ended: the working-tree status — Info
 )
 
 // Event is a guest→control-plane state transition.
@@ -84,12 +86,15 @@ type Event struct {
 	Reply     string  `json:"reply,omitempty"` // the agent's own words this turn, for the thread
 	CostUSD   float64 `json:"cost_usd,omitempty"`
 	Tokens    int     `json:"tokens,omitempty"`
+	Info      string  `json:"info,omitempty"` // tunnel output (EventTunnel) or tree status (EventDetached)
 }
 
 // Command types delivered to the guest (§8.3).
 const (
 	CommandUserMessage = "user_message"
 	CommandAbort       = "abort"
+	CommandAttach      = "attach" // start `code tunnel` for a human to jump into this VM
+	CommandDetach      = "detach" // stop the tunnel and report the working-tree status
 )
 
 // Command is a control-plane→guest instruction.

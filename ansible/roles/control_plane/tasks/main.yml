@@ -35,7 +35,7 @@
     mode: "0755"
   loop: "{{ control_plane_binaries }}"
   notify:
-    - Restart fleet-worker
+    - Restart mando-worker
     - Restart webhook-rx
     - Restart nats-bridge
 
@@ -47,7 +47,32 @@
     group: root
     mode: "0600"
   no_log: true
-  notify: Restart fleet-worker
+  notify: Restart mando-worker
+
+- name: Detect NATS per-session auth material
+  ansible.builtin.stat:
+    path: "{{ control_plane_nats_account_seed_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: control_plane_nats_seed_stat
+
+- name: Install NATS per-session auth material for the worker + nats-bridge
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ control_plane_conf_dir }}/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: nats-account.seed, src: "{{ control_plane_nats_account_seed_src }}", mode: "0600" }
+    - { name: nats-account.pub, src: "{{ control_plane_nats_account_pub_src }}", mode: "0644" }
+    - { name: nats-service.creds, src: "{{ control_plane_nats_service_creds_src }}", mode: "0600" }
+  when: control_plane_nats_seed_stat.stat.exists
+  no_log: true
+  notify:
+    - Restart mando-worker
+    - Restart nats-bridge
 
 - name: Install the webhook secret env file (Tier-0)
   ansible.builtin.copy:
@@ -66,7 +91,7 @@
     owner: root
     group: root
     mode: "0640"
-  notify: Restart fleet-worker
+  notify: Restart mando-worker
 
 # ---- Slack (optional): only if all three secrets exist on the controller ----
 - name: Check for the Slack secrets on the controller
@@ -98,8 +123,28 @@
   no_log: true
   when: control_plane_slack_enabled
   notify:
-    - Restart fleet-worker
+    - Restart mando-worker
     - Restart slack-gateway
+
+# ---- VS Code tunnel token (optional): only if the controller has one ----
+- name: Check for the VS Code tunnel token on the controller
+  ansible.builtin.stat:
+    path: "{{ control_plane_vscode_tunnel_token_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: control_plane_vscode_stat
+
+- name: Install the VS Code tunnel token (injected into guests so attach skips the device login)
+  ansible.builtin.copy:
+    src: "{{ control_plane_vscode_tunnel_token_src }}"
+    dest: "{{ control_plane_vscode_tunnel_token }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: control_plane_vscode_stat.stat.exists
+  notify: Restart mando-worker
 
 - name: Create the guest-stream log directory
   ansible.builtin.file:
@@ -117,13 +162,13 @@
     group: root
     mode: "0644"
   loop:
-    - fleet-worker.service
+    - mando-worker.service
     - webhook-rx.service
     - nats-bridge.service
     - slack-gateway.service
   notify:
     - Reload systemd daemon (control-plane)
-    - Restart fleet-worker
+    - Restart mando-worker
     - Restart webhook-rx
     - Restart nats-bridge
     - Restart slack-gateway
@@ -138,7 +183,7 @@
     state: started
   loop:
     - nats-bridge
-    - fleet-worker
+    - mando-worker
     - webhook-rx
 
 - name: Enable and start slack-gateway when Slack is configured

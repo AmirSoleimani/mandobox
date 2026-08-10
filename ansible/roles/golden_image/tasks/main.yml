@@ -37,59 +37,38 @@
     group: root
     mode: "0755"
 
-- name: Install the Docker-free build script
+# Split, cached build: mkimage.sh (base|assemble) + update-tools.sh (assemble+activate+audit) + the
+# pinned tool-versions manifest. A CLI bump re-runs only the fast `assemble` (~1 min), not the base.
+- name: Install the split image-build scripts
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../image/build-mmdebstrap.sh"
-    dest: "{{ golden_image_lib_dir }}/build-mmdebstrap.sh"
+    src: "{{ playbook_dir }}/../image/{{ item }}"
+    dest: "{{ golden_image_lib_dir }}/{{ item }}"
     owner: root
     group: root
-    mode: "0755"
+    mode: "{{ '0644' if item == 'tools.env' else '0755' }}"
+  loop:
+    - mkimage.sh
+    - update-tools.sh
+    - tools.env
 
-# Not idempotent by nature — each build is a fresh content-addressed artifact. Output is
-# redirected to a host log: build tools (npm/node) emit non-UTF8 bytes that Ansible's result
-# deserializer rejects. On failure, read /var/log/fleet-image-build.log on the host.
-- name: Build the golden image (mmdebstrap; several minutes)
-  ansible.builtin.shell: "{{ golden_image_lib_dir }}/build-mmdebstrap.sh >/var/log/fleet-image-build.log 2>&1"
+# update-tools.sh builds the cached base on first run (several minutes), then assembles + activates +
+# audits. Output is redirected to a host log: npm/node emit non-UTF8 bytes Ansible's deserializer
+# rejects. On failure, read /var/log/fleet-image-build.log on the host.
+- name: Build/assemble + activate the golden image
+  ansible.builtin.shell: "{{ golden_image_lib_dir }}/update-tools.sh >/var/log/fleet-image-build.log 2>&1"
   args:
     executable: /bin/bash
   environment:
-    SUPERVISOR_BIN: "{{ golden_image_lib_dir }}/fc-supervisor"
     OUT_DIR: "{{ golden_image_out_dir }}"
+    BASE_DIR: "{{ golden_image_out_dir | dirname }}/base"
     SIZE_MB: "{{ golden_image_size_mb }}"
   changed_when: true
 
-- name: Read the built image sha
-  ansible.builtin.shell: "cat $(ls -t {{ golden_image_out_dir }}/rootfs-*.sha256 | head -1)"
-  args:
-    executable: /bin/bash
+- name: Read the active image sha
+  ansible.builtin.command: "cat {{ golden_image_out_dir }}/current.sha"
   register: golden_image_sha
   changed_when: false
 
-# The build emits a compressed .ext4.zst (for storage/transfer); fleet-agent launches from
-# the decompressed .ext4. Activation makes the freshly built image the live one.
-- name: Decompress the built image for launch
-  ansible.builtin.shell: >
-    zstd -d -f
-    "{{ golden_image_out_dir }}/rootfs-{{ golden_image_sha.stdout | trim }}.ext4.zst"
-    -o "{{ golden_image_out_dir }}/rootfs-{{ golden_image_sha.stdout | trim }}.ext4"
-  args:
-    executable: /bin/bash
-    creates: "{{ golden_image_out_dir }}/rootfs-{{ golden_image_sha.stdout | trim }}.ext4"
-
-- name: Activate the built image as current
-  ansible.builtin.file:
-    src: "rootfs-{{ golden_image_sha.stdout | trim }}.ext4"
-    dest: "{{ golden_image_out_dir }}/current.ext4"
-    state: link
-
-- name: Record the current image sha
-  ansible.builtin.copy:
-    content: "{{ golden_image_sha.stdout | trim }}\n"
-    dest: "{{ golden_image_out_dir }}/current.sha"
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Report the built image sha
+- name: Report the active image
   ansible.builtin.debug:
     msg: "golden image active: rootfs-{{ golden_image_sha.stdout | trim }}.ext4 (current.ext4) in {{ golden_image_out_dir }}"

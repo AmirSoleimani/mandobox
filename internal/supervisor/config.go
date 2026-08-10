@@ -10,11 +10,12 @@ package supervisor
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
-	"github.com/chelodo/fleet/internal/session"
+	"github.com/chelodo/mandobox/internal/session"
 )
 
-// BootConfig is the guest's boot configuration, parsed from the MMDS JSON that fleet-agent
+// BootConfig is the guest's boot configuration, parsed from the MMDS JSON that mando-agent
 // injected (network + session_id) merged with the control plane's payload (repo, task,
 // gateway, github, nats). See docs for the schema.
 type BootConfig struct {
@@ -26,9 +27,41 @@ type BootConfig struct {
 	GitHub    GitHubConfig  `json:"github"`
 	NATS      NATSConfig    `json:"nats"`
 	Claude    ClaudeConfig  `json:"claude"`
+	Agent     AgentConfig   `json:"agent,omitempty"`
+	VSCode    VSCodeConfig  `json:"vscode,omitempty"`
 }
 
-// NetworkConfig is the point-to-point link fleet-agent allocated (§8.1: configure eth0
+// AgentConfig selects the coding-agent harness and carries per-repo instructions from the resolved
+// .mandobox.yml. Harness "" defaults to Claude Code. Instructions are appended to the agent's system
+// prompt (they don't replace the repo's own CLAUDE.md/AGENTS.md).
+type AgentConfig struct {
+	Harness      string `json:"harness,omitempty"`
+	Instructions string `json:"instructions,omitempty"`
+	// PreambleAutonomous / PreambleCollaborate override the built-in task preambles (the base agent
+	// system prompts) when the operator sets them box-side. Empty → the built-in default is used.
+	PreambleAutonomous  string `json:"preamble_autonomous,omitempty"`
+	PreambleCollaborate string `json:"preamble_collaborate,omitempty"`
+	// Auth selects how the agent reaches the LLM. "" / "api_key" (default) → via the host gateway on a
+	// per-session token; the real key stays host-side. "subscription" → Claude Code authenticates on
+	// the operator's Claude plan with OAuthToken, talking to Anthropic directly (single-user only; the
+	// token lives in the guest). See docs/subscription-auth.md.
+	Auth       string `json:"auth,omitempty"`
+	OAuthToken string `json:"oauth_token,omitempty"`
+	// CheapModel is the active provider's helper model (commit messages). It follows the same provider
+	// as the agent so helpers never diverge onto a different provider/key. Empty → the built-in default.
+	CheapModel string `json:"cheap_model,omitempty"`
+}
+
+// VSCodeConfig carries a pre-authenticated `code tunnel` token (the contents of the CLI's
+// token.json) so a human attach skips the GitHub device login, plus the hostname that token was
+// minted under. The CLI binds its stored auth to the hostname, so the guest adopts Hostname before
+// starting the tunnel or the token reads as logged-out. Both optional.
+type VSCodeConfig struct {
+	TunnelToken string `json:"tunnel_token,omitempty"`
+	Hostname    string `json:"hostname,omitempty"`
+}
+
+// NetworkConfig is the point-to-point link mando-agent allocated (§8.1: configure eth0
 // statically, no DHCP).
 type NetworkConfig struct {
 	Tap       string `json:"tap"`
@@ -44,6 +77,9 @@ type RepoConfig struct {
 	Slug       string `json:"slug"`      // owner/name
 	CloneURL   string `json:"clone_url"` // https clone URL (no embedded token — §9)
 	BaseBranch string `json:"base_branch"`
+	// HeadBranch is the agent branch to push/PR, chosen by the control plane (a task-derived name).
+	// Empty → fall back to the session-derived default (see Branch).
+	HeadBranch string `json:"head_branch,omitempty"`
 }
 
 // TaskConfig carries the work to do. Mode is "initial" (first run: implement + open PR) or
@@ -124,5 +160,11 @@ func (c BootConfig) validate() error {
 	return nil
 }
 
-// Branch returns the git branch for this session: agent/<session_id> (§5).
-func (c BootConfig) Branch() string { return c.SessionID.Branch() }
+// Branch returns the git branch the agent pushes to: the control plane's task-derived head_branch
+// when set, else the session-derived default agent/<session_id> (§5).
+func (c BootConfig) Branch() string {
+	if b := strings.TrimSpace(c.Repo.HeadBranch); b != "" {
+		return b
+	}
+	return c.SessionID.Branch()
+}

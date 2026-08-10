@@ -25,3 +25,7 @@ litellm_model_overrides: []
 # Secrets (Tier-0, gitignored, host-side only).
 litellm_anthropic_key_src: "{{ playbook_dir }}/../secrets/anthropic.key"
 litellm_master_key_src: "{{ playbook_dir }}/../secrets/litellm-master-key"
+# Optional: an OpenAI key enables the Codex harness (agent: codex). Drop it here and add a gpt route
+# to litellm_model_overrides, e.g. {name: "gpt-5-codex", model: "openai/gpt-5-codex"}. Absent → no
+# OpenAI routing (the env line below is simply omitted).
+litellm_openai_key_src: "{{ playbook_dir }}/../secrets/openai.key"

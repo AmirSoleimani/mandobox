@@ -3,9 +3,9 @@
   ansible.builtin.systemd_service:
     daemon_reload: true
 
-- name: Restart fleet-worker
+- name: Restart mando-worker
   ansible.builtin.systemd_service:
-    name: fleet-worker
+    name: mando-worker
     state: restarted
 
 - name: Restart webhook-rx

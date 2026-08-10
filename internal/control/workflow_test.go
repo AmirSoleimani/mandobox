@@ -2,10 +2,11 @@ package control_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/chelodo/fleet/internal/control"
+	"github.com/chelodo/mandobox/internal/control"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/sdk/testsuite"
@@ -45,6 +46,7 @@ func (s *PRWorkflowSuite) Test_ReviewComment_Resume_Then_Merge() {
 		Return(control.PhaseResult{Outcome: "pr_opened", PRNumber: 7, PRURL: "u", CostUSD: 0.5, Tokens: 100}, nil).Once()
 	env.OnActivity(a.RunAgentPhase, mock.Anything, mock.Anything).
 		Return(control.PhaseResult{Outcome: "push_done", CommitSHA: "abc", CostUSD: 0.2, Tokens: 50}, nil).Once()
+	env.OnActivity(a.FetchPRThread, mock.Anything, mock.Anything).Return([]control.ThreadComment{}, nil)
 	var purged bool
 	env.OnActivity(a.DestroyVM, mock.Anything, mock.Anything).
 		Return(func(_ context.Context, p control.DestroyParams) error {
@@ -84,8 +86,62 @@ func (s *PRWorkflowSuite) Test_ReviewComment_Resume_Then_Merge() {
 	env.AssertExpectations(s.T())
 }
 
+// The thread reconcile folds in a human comment GitHub has but no webhook delivered (the dropped-
+// delivery safety net), while a comment already delivered by webhook is not re-fed.
+func (s *PRWorkflowSuite) Test_Reconcile_FoldsInMissedComment() {
+	env := s.NewTestWorkflowEnvironment()
+	var a *control.Activities
+
+	env.OnActivity(a.PostSlack, mock.Anything, mock.Anything).Return(control.PostSlackResult{}, nil)
+	var texts []string
+	env.OnActivity(a.DeliverMessage, mock.Anything, mock.Anything).
+		Return(func(_ context.Context, p control.DeliverParams) error { texts = append(texts, p.Text); return nil })
+	env.OnActivity(a.MintCredentials, mock.Anything, mock.Anything).Return(control.Credentials{GitHubToken: "t"}, nil)
+	env.OnActivity(a.LaunchVM, mock.Anything, mock.Anything).Return(control.LaunchResult{GuestIP: "10.0.0.2"}, nil)
+	env.OnActivity(a.RunAgentPhase, mock.Anything, mock.Anything).
+		Return(control.PhaseResult{Outcome: "pr_opened", PRNumber: 7, PRURL: "u", CostUSD: 0.5, Tokens: 100}, nil).Once()
+	env.OnActivity(a.RunAgentPhase, mock.Anything, mock.Anything).
+		Return(control.PhaseResult{Outcome: "push_done", CommitSHA: "abc", CostUSD: 0.2, Tokens: 50}, nil).Once()
+	env.OnActivity(a.PostPRComment, mock.Anything, mock.Anything).Return(nil)
+	env.OnActivity(a.DestroyVM, mock.Anything, mock.Anything).Return(nil)
+	// GitHub reports two inline comments: id 10 (already delivered by webhook below) and id 55
+	// (whose webhook never arrived). Only 55 should be newly folded in.
+	env.OnActivity(a.FetchPRThread, mock.Anything, mock.Anything).Return([]control.ThreadComment{
+		{ID: 10, Author: "amir", Body: "the delivered one", Path: "a.go", Line: 3, Kind: "review_comment", Created: "2026-01-01T00:00:00Z"},
+		{ID: 55, Author: "amir", Body: "the missed one", Path: "b.go", Line: 9, Kind: "review_comment", Created: "2026-01-01T00:00:01Z"},
+	}, nil)
+
+	// One webhook-delivered inline comment (id 10) arms the round; reconcile then discovers id 55.
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(control.SignalReviewComment, control.ReviewCommentSignal{
+			Body: "the delivered one", Author: "amir", Path: "a.go", Line: 3, CommentID: 10, DeliveryID: "d1"})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(control.SignalPRClosed, control.PRClosedSignal{Merged: true, DeliveryID: "d2"})
+	}, 200*time.Second)
+
+	env.ExecuteWorkflow(control.PRWorkflow, baseInput())
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	// The missed comment reached the agent; the already-delivered one was not duplicated.
+	var missed, delivered10 int
+	for _, t := range texts {
+		if strings.Contains(t, "the missed one") {
+			missed++
+		}
+		if strings.Contains(t, "the delivered one") {
+			delivered10++
+		}
+	}
+	s.Equal(1, missed, "the missed comment must be folded in exactly once")
+	s.Equal(1, delivered10, "the already-delivered comment must not be re-fed")
+}
+
 // A run that opens no PR tears down immediately without entering the review loop.
-func (s *PRWorkflowSuite) Test_NoPR_TearsDown() {
+// A first run that opens no PR no longer tears down instantly — it keeps the session so the operator
+// can supply what was missing (a plan/spec). With no follow-up, the idle keep-alive ends it cleanly.
+func (s *PRWorkflowSuite) Test_NoPR_WaitsThenEndsOnIdle() {
 	env := s.NewTestWorkflowEnvironment()
 	var a *control.Activities
 
@@ -103,5 +159,5 @@ func (s *PRWorkflowSuite) Test_NoPR_TearsDown() {
 	var st control.State
 	s.NoError(env.GetWorkflowResult(&st))
 	s.Equal(0, st.PRNumber)
-	s.Equal("no_pr", st.Phase)
+	s.Equal("ended_no_input", st.Phase)
 }

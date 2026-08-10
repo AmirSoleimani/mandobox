@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chelodo/fleet/internal/session"
+	"github.com/chelodo/mandobox/internal/session"
 )
 
 // ErrAtCapacity is returned when the fleet is already running MaxVMs. The HTTP layer maps
@@ -19,7 +19,7 @@ import (
 var ErrAtCapacity = errors.New("fleet at capacity")
 
 // ErrForbiddenMMDS is returned when a launch payload would place a Tier-0 credential in a
-// guest (invariant I9). fleet-agent refuses rather than trusting the caller.
+// guest (invariant I9). mando-agent refuses rather than trusting the caller.
 var ErrForbiddenMMDS = errors.New("mmds payload contains a forbidden key")
 
 // procAlive reports whether a pid names a live process. It is a package var so tests can
@@ -203,7 +203,7 @@ func (m *Manager) Destroy(ctx context.Context, id session.ID, purgeWorkspace boo
 	return nil
 }
 
-// List returns every VM fleet-agent is tracking, for reconciliation (PLAN §7.7).
+// List returns every VM mando-agent is tracking, for reconciliation (PLAN §7.7).
 func (m *Manager) List() ([]VMRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -217,9 +217,9 @@ func orDefault(v, def int) int {
 	return v
 }
 
-// mergeMMDS returns a shallow copy of payload augmented with the network facts fleet-agent
+// mergeMMDS returns a shallow copy of payload augmented with the network facts mando-agent
 // allocated at launch (the guest learns its own IP from MMDS — §8.1) and the session_id for
-// correlation. fleet-agent's network is authoritative and overrides any provided value.
+// correlation. mando-agent's network is authoritative and overrides any provided value.
 func mergeMMDS(payload map[string]any, id session.ID, g GuestNet) map[string]any {
 	out := make(map[string]any, len(payload)+2)
 	maps.Copy(out, payload)

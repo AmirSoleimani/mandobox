@@ -9,13 +9,13 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/chelodo/fleet/internal/session"
+	"github.com/chelodo/mandobox/internal/session"
 )
 
 // ErrNotFound is returned when no state exists for a session.
 var ErrNotFound = errors.New("vm state not found")
 
-// VMRecord is the authoritative per-VM state fleet-agent maintains under
+// VMRecord is the authoritative per-VM state mando-agent maintains under
 // RunStateDir/<session_id>/. It is the reaper's and reconciler's view of a live VM
 // (PLAN §7.6, §7.7). The directory lives on tmpfs, so a host reboot clears it while the
 // workspace volume (real state, I7) survives elsewhere.

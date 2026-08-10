@@ -3,7 +3,7 @@ package fleetagent
 import (
 	"testing"
 
-	"github.com/chelodo/fleet/internal/session"
+	"github.com/chelodo/mandobox/internal/session"
 )
 
 func testConfig(t *testing.T) Config {

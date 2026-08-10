@@ -1,0 +1,9 @@
+---
+- name: Reload systemd daemon (dashboard)
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart mando-dashboard
+  ansible.builtin.systemd_service:
+    name: mando-dashboard
+    state: restarted

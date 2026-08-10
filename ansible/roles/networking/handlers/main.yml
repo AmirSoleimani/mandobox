@@ -5,7 +5,7 @@
 
 - name: Restart network anchor
   ansible.builtin.systemd_service:
-    name: fleet-net-anchor.service
+    name: mando-net-anchor.service
     state: restarted
 
 - name: Restart dnsmasq

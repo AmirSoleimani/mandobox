@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chelodo/fleet/internal/session"
+	"github.com/chelodo/mandobox/internal/session"
 )
 
 func newTestServer(t *testing.T, maxVMs int) (http.Handler, *Manager) {

@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chelodo/fleet/internal/control"
+	"github.com/chelodo/mandobox/internal/control"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 )
@@ -27,6 +27,7 @@ type server struct {
 	c         client.Client
 	namespace string
 	secret    []byte
+	botUser   string // the App's own bot login — its comments must never be routed back (echo loop)
 }
 
 func main() {
@@ -44,7 +45,8 @@ func main() {
 	}
 	defer c.Close()
 
-	s := &server{c: c, namespace: env("TEMPORAL_NAMESPACE", "fleet"), secret: []byte(secret)}
+	s := &server{c: c, namespace: env("TEMPORAL_NAMESPACE", "fleet"), secret: []byte(secret),
+		botUser: env("GITHUB_BOT_USER", "")}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.HandleFunc("/webhook", s.handle)
@@ -67,7 +69,7 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 	event := r.Header.Get("X-GitHub-Event")
 	delivery := r.Header.Get("X-GitHub-Delivery")
 
-	sig, repo, prNumber, ok := mapEvent(event, delivery, body)
+	sig, repo, prNumber, ok := mapEvent(event, delivery, s.botUser, body)
 	if !ok {
 		w.WriteHeader(http.StatusAccepted) // event we don't route (e.g. ping) — accept and ignore
 		return
@@ -126,14 +128,22 @@ type signal struct {
 }
 
 // mapEvent extracts (signal, repo, prNumber) from a GitHub webhook, or ok=false to ignore it.
-func mapEvent(event, delivery string, body []byte) (signal, string, int, bool) {
+func mapEvent(event, delivery, botUser string, body []byte) (signal, string, int, bool) {
 	var p githubPayload
 	if err := json.Unmarshal(body, &p); err != nil {
 		return signal{}, "", 0, false
 	}
 	repo := p.Repository.FullName
+	// The agent posts its replies as the App's bot; those comments/reviews fire webhooks too. If we
+	// routed them back the agent would answer itself forever (echo loop). Only humans drive a round —
+	// so drop any comment/review authored by a bot (type=="Bot") or by our own bot login. CI results
+	// still arrive via check_suite, not comments, so this doesn't suppress auto-fix.
+	isBot := func(login, typ string) bool { return typ == "Bot" || (botUser != "" && login == botUser) }
 	switch event {
 	case "pull_request_review_comment":
+		if isBot(p.Comment.User.Login, p.Comment.User.Type) {
+			return signal{}, "", 0, false
+		}
 		return signal{control.SignalReviewComment, control.ReviewCommentSignal{
 			Body: p.Comment.Body, Author: p.Comment.User.Login,
 			Path: p.Comment.Path, Line: p.Comment.Line, CommentID: p.Comment.ID, DeliveryID: delivery,
@@ -142,13 +152,20 @@ func mapEvent(event, delivery string, body []byte) (signal, string, int, bool) {
 		if p.Issue.PullRequest == nil { // only PR comments matter
 			return signal{}, "", 0, false
 		}
+		if isBot(p.Comment.User.Login, p.Comment.User.Type) {
+			return signal{}, "", 0, false
+		}
 		return signal{control.SignalReviewComment, control.ReviewCommentSignal{
-			Body: p.Comment.Body, Author: p.Comment.User.Login, DeliveryID: delivery,
+			Body: p.Comment.Body, Author: p.Comment.User.Login,
+			CommentID: p.Comment.ID, DeliveryID: delivery, // no Path → the workflow won't thread a reply under it
 		}}, repo, p.Issue.Number, true
 	case "pull_request_review":
+		if isBot(p.Review.User.Login, p.Review.User.Type) {
+			return signal{}, "", 0, false
+		}
 		return signal{control.SignalReviewSubmitted, control.ReviewSubmittedSignal{
 			State: strings.ToLower(p.Review.State), Body: p.Review.Body,
-			Author: p.Review.User.Login, DeliveryID: delivery,
+			Author: p.Review.User.Login, ReviewID: p.Review.ID, DeliveryID: delivery,
 		}}, repo, p.PullRequest.Number, true
 	case "pull_request":
 		if p.Action != "closed" {
@@ -190,13 +207,16 @@ type githubPayload struct {
 		Line int    `json:"line"`
 		User struct {
 			Login string `json:"login"`
+			Type  string `json:"type"` // "User" | "Bot" — used to drop the agent's own echoes
 		} `json:"user"`
 	} `json:"comment"`
 	Review struct {
+		ID    int64  `json:"id"`
 		State string `json:"state"`
 		Body  string `json:"body"`
 		User  struct {
 			Login string `json:"login"`
+			Type  string `json:"type"`
 		} `json:"user"`
 	} `json:"review"`
 	CheckSuite struct {

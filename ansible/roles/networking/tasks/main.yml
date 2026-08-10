@@ -18,8 +18,8 @@
 # --- Host network anchor -------------------------------------------------------
 - name: Install the network-anchor unit
   ansible.builtin.template:
-    src: fleet-net-anchor.service.j2
-    dest: /etc/systemd/system/fleet-net-anchor.service
+    src: mando-net-anchor.service.j2
+    dest: /etc/systemd/system/mando-net-anchor.service
     owner: root
     group: root
     mode: "0644"
@@ -34,7 +34,7 @@
 
 - name: Enable and start the network anchor
   ansible.builtin.systemd_service:
-    name: fleet-net-anchor.service
+    name: mando-net-anchor.service
     enabled: true
     state: started
 

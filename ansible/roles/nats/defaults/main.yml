@@ -15,5 +15,17 @@ nats_listen: "{{ fleet_host_gw_addr }}:4222"
 # Matches the guest supervisor's large stream-json log lines (§8.2).
 nats_max_payload: "8MB"
 
+# Decentralized-auth artifacts, generated ONCE on the controller with `mando-natsauth -out secrets/nats`.
+# When the operator JWT is present, the role switches the server to per-session JWT auth; absent → the
+# legacy unauthenticated bus (safe in-place upgrade — generate the material and redeploy to enable auth).
+nats_auth_src_dir: "{{ playbook_dir }}/../secrets/nats"
+nats_operator_jwt_src: "{{ nats_auth_src_dir }}/nats-operator.jwt"
+nats_account_jwt_src: "{{ nats_auth_src_dir }}/nats-account.jwt"
+nats_account_pub_src: "{{ nats_auth_src_dir }}/nats-account.pub"
+
 nats_download_url: >-
   https://github.com/nats-io/nats-server/releases/download/v{{ nats_version }}/nats-server-v{{ nats_version }}-linux-{{ nats_arch }}.tar.gz
+
+# sha256 of the pinned release tarball — get_url fails closed on a mismatch (supply-chain integrity).
+# Update alongside nats_version (from the release's SHA256SUMS asset, or `sha256sum` the tarball).
+nats_download_sha256: "f3d0c820c749f81d717310fb00d4903919e70e3e66b268bd352a088b9788eb93"
