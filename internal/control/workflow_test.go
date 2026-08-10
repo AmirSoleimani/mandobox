@@ -34,7 +34,7 @@ func (s *PRWorkflowSuite) Test_ReviewComment_Resume_Then_Merge() {
 	env := s.NewTestWorkflowEnvironment()
 	var a *control.Activities
 
-	env.OnActivity(a.PostSlack, mock.Anything, mock.Anything).Return(control.PostSlackResult{}, nil)
+	env.OnActivity(a.PostMessage, mock.Anything, mock.Anything).Return(control.NotifyResult{}, nil)
 	var delivered int
 	env.OnActivity(a.DeliverMessage, mock.Anything, mock.Anything).
 		Return(func(_ context.Context, _ control.DeliverParams) error { delivered++; return nil })
@@ -92,7 +92,7 @@ func (s *PRWorkflowSuite) Test_Reconcile_FoldsInMissedComment() {
 	env := s.NewTestWorkflowEnvironment()
 	var a *control.Activities
 
-	env.OnActivity(a.PostSlack, mock.Anything, mock.Anything).Return(control.PostSlackResult{}, nil)
+	env.OnActivity(a.PostMessage, mock.Anything, mock.Anything).Return(control.NotifyResult{}, nil)
 	var texts []string
 	env.OnActivity(a.DeliverMessage, mock.Anything, mock.Anything).
 		Return(func(_ context.Context, p control.DeliverParams) error { texts = append(texts, p.Text); return nil })
@@ -145,7 +145,7 @@ func (s *PRWorkflowSuite) Test_NoPR_WaitsThenEndsOnIdle() {
 	env := s.NewTestWorkflowEnvironment()
 	var a *control.Activities
 
-	env.OnActivity(a.PostSlack, mock.Anything, mock.Anything).Return(control.PostSlackResult{}, nil)
+	env.OnActivity(a.PostMessage, mock.Anything, mock.Anything).Return(control.NotifyResult{}, nil)
 	env.OnActivity(a.MintCredentials, mock.Anything, mock.Anything).Return(control.Credentials{}, nil)
 	env.OnActivity(a.LaunchVM, mock.Anything, mock.Anything).Return(control.LaunchResult{}, nil)
 	env.OnActivity(a.RunAgentPhase, mock.Anything, mock.Anything).

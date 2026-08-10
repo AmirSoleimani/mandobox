@@ -70,6 +70,10 @@ type Activities struct {
 	ReconcileAuthority reconcile.Authority
 	ReconcileGrace     time.Duration
 	slackClient        *http.Client
+	// Notifiers holds registered chat connectors keyed by Conversation.Kind — the worker assigns this
+	// at startup to add connectors (e.g. a Telegram Notifier). The default Slack connector need not be
+	// listed; it is built lazily from SlackBotToken (see notifierFor). Read-only once the worker starts.
+	Notifiers map[string]Notifier
 }
 
 // natsConnect dials the control bus, adding the worker's broad service credentials once NATS auth is
@@ -260,9 +264,8 @@ func (a *Activities) FetchPRThread(ctx context.Context, p FetchThreadParams) ([]
 
 // RelayParams drives RelayTunnel — where to stream the human-attach tunnel's output.
 type RelayParams struct {
-	SessionID string `json:"session_id"`
-	Channel   string `json:"channel"`
-	ThreadTS  string `json:"thread_ts"`
+	SessionID    string       `json:"session_id"`
+	Conversation Conversation `json:"conversation"`
 }
 
 // RelayTunnel streams a human-attach tunnel to Slack: it subscribes to the guest's event stream,
@@ -282,7 +285,8 @@ func (a *Activities) RelayTunnel(ctx context.Context, p RelayParams) (string, er
 	}
 	defer sub.Unsubscribe() //nolint:errcheck
 
-	seen := map[string]bool{} // dedupe re-emitted tunnel lines so each is posted once
+	n := a.notifierFor(p.Conversation.resolvedKind()) // nil when no chat connector is configured
+	seen := map[string]bool{}                         // dedupe re-emitted tunnel lines so each is posted once
 	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -296,12 +300,11 @@ func (a *Activities) RelayTunnel(ctx context.Context, p RelayParams) (string, er
 			}
 			switch ev.Type {
 			case supervisor.EventTunnel:
-				if ev.Info == "" || seen[ev.Info] {
+				if n == nil || ev.Info == "" || seen[ev.Info] {
 					continue
 				}
 				seen[ev.Info] = true
-				_, _ = a.PostSlack(ctx, PostSlackParams{Channel: p.Channel, ThreadTS: p.ThreadTS,
-					Text: ":globe_with_meridians: " + ev.Info})
+				_, _ = n.Post(ctx, p.Conversation, ":globe_with_meridians: "+ev.Info)
 			case supervisor.EventDetached:
 				return ev.Info, nil
 			}

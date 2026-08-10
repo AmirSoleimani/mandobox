@@ -3,8 +3,8 @@
 //   - the /mando slash command  → start a PRWorkflow
 //   - replies in a session thread → a user_message signal to that workflow
 //
-// Outbound rendering (the thread itself) is done by the worker's PostSlack activity. This
-// process only translates; policy lives in the workflow.
+// Outbound rendering (the thread itself) is done by the worker's PostMessage activity via the Slack
+// Notifier. This process only translates; policy lives in the workflow.
 package main
 
 import (
@@ -167,7 +167,7 @@ func (g *gateway) handleSlash(cmd slack.SlashCommand) string {
 		Prompt:       prompt,
 		ImageSHA:     imageSHA,
 		Model:        model, // "" → config default; resources come from the resolved profile
-		SlackChannel: cmd.ChannelID,
+		Conversation: control.Conversation{Kind: control.DefaultChatKind, Channel: cmd.ChannelID},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -317,7 +317,7 @@ func (g *gateway) resolveWorkflow(ctx context.Context, target string) (string, e
 
 func (g *gateway) findWorkflowByThread(ctx context.Context, threadTS string) (string, error) {
 	query := fmt.Sprintf(`WorkflowType='PRWorkflow' AND %s=%s AND ExecutionStatus='Running'`,
-		control.SASlackThread, strconv.Quote(threadTS))
+		control.SAConversation, strconv.Quote(control.DefaultChatKind+":"+threadTS))
 	resp, err := g.tc.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
 		Namespace: g.namespace, Query: query, PageSize: 1,
 	})
