@@ -22,7 +22,7 @@ temporal_search_attributes:
   - {name: repo, type: Keyword}
   - {name: pr_number, type: Int}
   - {name: review_round, type: Int}
-  - {name: slack_thread, type: Keyword} # thread_ts → workflow, for slack-gateway routing
+  - {name: conversation, type: Keyword} # "<kind>:<thread>" → workflow, for connector reply routing
 
 # PostgreSQL. The password is a Tier-0 secret kept on the controller, never committed.
 temporal_pg_host: 127.0.0.1

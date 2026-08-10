@@ -191,6 +191,30 @@ Two independent mechanisms keep the fleet honest:
 Because the workspace volume is the only surviving mutable state, recovery is always "re-launch a VM and
 re-attach the workspace."
 
+## Adding a chat connector
+
+Slack is one **chat connector** — the conversation surface a task is dispatched from and reports back
+to. GitHub is different: it's the *substrate* (every task ends in a PR), not a swappable chat channel.
+Adding another chat connector (Telegram, WhatsApp, Discord, …) is three small, independent pieces —
+the workflow itself never changes:
+
+1. **Outbound** — implement the `Notifier` interface (`internal/control/notify.go`): `Post` (start a
+   thread / reply in one) and `Update`. Register it on the worker with `RegisterNotifier`. The workflow
+   only ever calls the generic `PostMessage`/`UpdateMessage` activities against a `Conversation{Kind,
+   Channel, Thread}`, so it routes to your connector automatically by `Kind`.
+2. **Inbound** — write a small translator (mirror `cmd/slack-gateway`): receive the platform's events
+   and turn them into the same two generic Temporal calls every dispatcher uses —
+   `ExecuteWorkflow(PRWorkflow, WorkflowInput{Conversation: {Kind, Channel}})` to start, and
+   `SignalWorkflow(SignalUserMessage, …)` to steer. Route a reply back to its workflow via a search
+   attribute (as `slack-gateway` uses `slack_thread`).
+3. **Config** — surface its secrets/setup on the dashboard's Connectors page.
+
+The workflow stays connector-agnostic for **routing and delivery**: it holds a `Conversation` (not a
+Slack channel) and routes replies by a namespaced `conversation` search attribute, so no workflow edit
+is needed. The one remaining Slack-specific assumption is message **formatting** — the workflow emits
+Slack-dialect text (mrkdwn + `:emoji:`), so a non-Slack connector's `Post` translates it. A
+connector-neutral message model is a planned refinement.
+
 ## Configuration, deployment & further reading
 
 - **Configuration** — box-wide `/etc/fleet/mandobox.yml` plus an optional per-repo `.mandobox.yml`,

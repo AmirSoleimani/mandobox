@@ -17,8 +17,6 @@ type State struct {
 	ReviewRound       int     `json:"review_round"`
 	CumulativeCostUSD float64 `json:"cumulative_cost_usd"`
 	CumulativeTokens  int     `json:"cumulative_tokens"`
-	SlackChannel      string  `json:"slack_channel"`
-	SlackThreadTS     string  `json:"slack_thread_ts"`
 	Phase             string  `json:"phase"`
 }
 

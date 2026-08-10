@@ -26,7 +26,7 @@ const (
 	SARepo        = "repo"
 	SAPRNumber    = "pr_number"
 	SAReviewRound = "review_round"
-	SASlackThread = "slack_thread" // thread_ts → workflow, so slack-gateway routes replies
+	SAConversation = "conversation" // "<kind>:<thread>" → workflow, so any connector routes chat replies
 )
 
 // Policy knobs — workflow input, baked nowhere else. Defaults applied in the
@@ -83,9 +83,10 @@ type WorkflowInput struct {
 	VCPUs        int    `json:"vcpus"`
 	MemMiB       int    `json:"mem_mib"`
 	Policy       Policy `json:"policy"`
-	// SlackChannel overrides the worker's default channel (set when dispatched from Slack so
-	// the thread lands in the channel where /fleet was run). Empty → the default channel.
-	SlackChannel string `json:"slack_channel"`
+	// Conversation is the chat surface this task talks to — set by the connector that dispatched it
+	// (e.g. slack-gateway sets Kind:"slack", Channel:<the channel /mando ran in>). Zero value → the
+	// default connector's default channel. This is the seam a new chat connector plugs into.
+	Conversation Conversation `json:"conversation"`
 }
 
 // State is the queryable workflow state block. Returned by the `status` query.
@@ -102,9 +103,10 @@ type State struct {
 	CumulativeCostUSD   float64  `json:"cumulative_cost_usd"`
 	CumulativeTokens    int      `json:"cumulative_tokens"`
 	PendingInstructions []string `json:"pending_instructions"`
-	SlackChannel        string   `json:"slack_channel"`
-	SlackThreadTS       string   `json:"slack_thread_ts"`
-	Phase               string   `json:"phase"` // human-readable current step
+	// Conversation records the chat surface (connector + channel + thread) this session posts to,
+	// set once the root message opens the thread. Empty for a channel-less (dashboard/CLI) session.
+	Conversation Conversation `json:"conversation"`
+	Phase        string       `json:"phase"` // human-readable current step
 	// CostCeilingReached latches once cumulative spend hits Policy.CostCeilingUSD: further agent turns
 	// are paused (feedback still queues) so untrusted PR/Slack input can't drive unbounded LLM spend.
 	CostCeilingReached bool `json:"cost_ceiling_reached,omitempty"`

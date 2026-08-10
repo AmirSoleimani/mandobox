@@ -50,7 +50,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	}
 
 	startTime := workflow.Now(ctx)
-	postRoot(ctx, st, in) // opens the Slack thread; sets SlackThreadTS + SlackChannel
+	postRoot(ctx, st, in) // opens the chat thread; records st.Conversation (channel + thread)
 
 	// Resolve the effective config: the repo's .mandobox.yml folded with the box defaults/limits and
 	// this task's overrides, clamped (docs/configuration.md). Version-gated so an in-flight workflow
@@ -67,7 +67,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 			in.Policy.HardTTL = rc.Policy.HardTTL
 			in.Policy.KeepAlive = rc.Policy.KeepAlive
 			for _, w := range rc.Warnings {
-				slackNote(ctx, st, ":information_source: "+w)
+				notify(ctx, st, ":information_source: "+w)
 			}
 		}
 	}
@@ -113,7 +113,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 			return *st, nil
 		}
 		noPRWait = true
-		slackNote(ctx, st, ":inbox_tray: Ready when you are — reply with the details, or drop your plan/spec in this thread, and I'll get to work.")
+		notify(ctx, st, ":inbox_tray: Ready when you are — reply with the details, or drop your plan/spec in this thread, and I'll get to work.")
 	}
 
 	// ---- review loop ----
@@ -186,7 +186,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 		st.Phase = "awaiting_input"
 	} else {
 		st.Phase = "awaiting_review"
-		slackNote(ctx, st, ":speech_balloon: Session's warm — reply in this thread with any changes and I'll jump on them.")
+		notify(ctx, st, ":speech_balloon: Session's warm — reply in this thread with any changes and I'll jump on them.")
 	}
 	// The session lives as long as the PR: it keeps answering comments (and keeps the workspace,
 	// so the agent's transcript retains the whole PR conversation) until the PR is merged/closed
@@ -309,7 +309,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 				gotFeedback = true
 				if editAckVersion >= 1 {
 					editDecision = true // ack this specifically below, tied to the operator's own edits
-					slackNote(ctx, st, ":inbox_tray: On it — taking care of the changes you made.")
+					notify(ctx, st, ":inbox_tray: On it — taking care of the changes you made.")
 				}
 			} else {
 				intent := "message"
@@ -362,7 +362,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 				// The session stays alive (PR open) until merged/closed/aborted or its TTL.
 				if !st.CostCeilingReached {
 					st.CostCeilingReached = true
-					slackNote(ctx, st, fmt.Sprintf(":no_entry: Cost ceiling ($%.2f) reached — pausing agent turns. Your feedback stays queued; raise the ceiling (re-dispatch) or close the PR to continue.", in.Policy.CostCeilingUSD))
+					notify(ctx, st, fmt.Sprintf(":no_entry: Cost ceiling ($%.2f) reached — pausing agent turns. Your feedback stays queued; raise the ceiling (re-dispatch) or close the PR to continue.", in.Policy.CostCeilingUSD))
 				}
 				st.Phase = "cost_ceiling_reached"
 				armKeepAlive()
@@ -386,7 +386,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 					st.PendingInstructions = append(instructions, st.PendingInstructions...)
 					pendingFromPR = pendingFromPR || fromPR // preserve origin for the retry
 					coalesce = workflow.NewTimer(ctx, in.Policy.ReviewDebounce)
-					slackNote(ctx, st, ":arrows_counterclockwise: That didn't land (the session dropped) — retrying on a fresh one…")
+					notify(ctx, st, ":arrows_counterclockwise: That didn't land (the session dropped) — retrying on a fresh one…")
 				} else {
 					if fromPR { // feedback came from GitHub — the full reply goes back on the PR thread…
 						postPRReply(ctx, st, r.Reply, replyToID)
@@ -405,10 +405,10 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 			switch {
 			case st.PRNumber == 0 && len(st.PendingInstructions) == 0:
 				endedNoInput = true
-				slackNote(ctx, st, ":zzz: No plan came through in time — I've ended this session. Dispatch again whenever you're ready.")
+				notify(ctx, st, ":zzz: No plan came through in time — I've ended this session. Dispatch again whenever you're ready.")
 			case st.VMState == vmRunning && len(st.PendingInstructions) == 0:
 				teardownVM(ctx, st)
-				slackNote(ctx, st, ":zzz: Parked — reply anytime and I'll spin back up.")
+				notify(ctx, st, ":zzz: Parked — reply anytime and I'll spin back up.")
 			}
 		}
 
@@ -419,7 +419,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 				r := launchWarm(ctx, in, st, supervisor.ModeResume, nil)
 				recordOutcome(ctx, st, in, r)
 			}
-			slackNote(ctx, st, ":outbox_tray: *Attaching* — I'll drop a VS Code link here in a few seconds; it opens straight in the repo. The agent pauses while you're in — just tell me when you're done.")
+			notify(ctx, st, ":outbox_tray: *Attaching* — I'll drop a VS Code link here in a few seconds; it opens straight in the repo. The agent pauses while you're in — just tell me when you're done.")
 			// Subscribe the relay BEFORE telling the guest to start the tunnel — NATS is fire-and-
 			// forget, so a relay that subscribes after the login line is published would miss it.
 			relay = startRelay(ctx, in, st)
@@ -433,7 +433,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 		if relayDone { // the tunnel ended (detach or timeout)
 			relay, attached = nil, false
 			if strings.TrimSpace(relayResult) == "" { // no hand-edits — nothing to decide
-				slackNote(ctx, st, ":inbox_tray: *Detached* — no changes left in the workspace. The agent is active again.")
+				notify(ctx, st, ":inbox_tray: *Detached* — no changes left in the workspace. The agent is active again.")
 				armKeepAlive()
 				if len(st.PendingInstructions) > 0 && coalesce == nil {
 					coalesce = workflow.NewTimer(ctx, in.Policy.ReviewDebounce)
@@ -472,13 +472,18 @@ func postRoot(ctx workflow.Context, st *State, in WorkflowInput) {
 	var a *Activities
 	text := fmt.Sprintf(":robot_face: *Task dispatched* `%s`\n*repo* `%s`  *branch* `%s`\n> %s",
 		in.SessionID, in.Repo, st.HeadBranch, truncate(in.Prompt, 300))
-	var r PostSlackResult
-	if err := workflow.ExecuteActivity(slackCtx(ctx), a.PostSlack,
-		PostSlackParams{Channel: in.SlackChannel, Text: text}).Get(ctx, &r); err == nil && r.TS != "" {
-		st.SlackThreadTS, st.SlackChannel = r.TS, r.Channel
-		// So slack-gateway can route thread replies back to this workflow.
+	conv := in.Conversation
+	conv.Thread = "" // the root message starts the thread
+	var r NotifyResult
+	if err := workflow.ExecuteActivity(slackCtx(ctx), a.PostMessage,
+		PostMessageParams{Conversation: conv, Text: text}).Get(ctx, &r); err == nil && r.Thread != "" {
+		st.Conversation = Conversation{Kind: conv.resolvedKind(), Channel: r.Channel, Thread: r.Thread}
+		// So any connector's inbound translator can route thread replies back to this workflow, keyed by
+		// "<kind>:<thread>" (namespaced so different connectors' thread ids can't collide). No connector
+		// name appears here — the routing is connector-agnostic.
 		_ = workflow.UpsertTypedSearchAttributes(ctx,
-			temporal.NewSearchAttributeKeyKeyword(SASlackThread).ValueSet(r.TS))
+			temporal.NewSearchAttributeKeyKeyword(SAConversation).ValueSet(
+				st.Conversation.Kind+":"+st.Conversation.Thread))
 	}
 }
 
@@ -489,13 +494,13 @@ func costCeilingReached(in WorkflowInput, st *State) bool {
 	return in.Policy.CostCeilingUSD > 0 && st.CumulativeCostUSD >= in.Policy.CostCeilingUSD
 }
 
-func slackNote(ctx workflow.Context, st *State, text string) {
-	if st.SlackThreadTS == "" {
+func notify(ctx workflow.Context, st *State, text string) {
+	if st.Conversation.Thread == "" {
 		return
 	}
 	var a *Activities
-	_ = workflow.ExecuteActivity(slackCtx(ctx), a.PostSlack,
-		PostSlackParams{Channel: st.SlackChannel, ThreadTS: st.SlackThreadTS, Text: text}).Get(ctx, nil)
+	_ = workflow.ExecuteActivity(slackCtx(ctx), a.PostMessage,
+		PostMessageParams{Conversation: st.Conversation, Text: text}).Get(ctx, nil)
 }
 
 // reportPhase renders a turn as conversation: the agent's own words, plus a small footer noting
@@ -510,7 +515,7 @@ func reportPhase(ctx workflow.Context, st *State, res PhaseResult, fromPR bool) 
 			msg += "\n" + truncate(reply, 1500)
 		}
 		msg += fmt.Sprintf("\n_$%.4f · %d tokens_", res.CostUSD, res.Tokens)
-		slackNote(ctx, st, msg)
+		notify(ctx, st, msg)
 	case supervisor.EventPushDone:
 		// A PR-origin turn already carries the full reply in its PR thread; Slack gets a compact
 		// breadcrumb (a short snippet + link) so the timeline stays followable without duplicating a
@@ -526,7 +531,7 @@ func reportPhase(ctx workflow.Context, st *State, res PhaseResult, fromPR bool) 
 			} else {
 				msg += fmt.Sprintf(" · _$%.4f · %d tokens_", res.CostUSD, res.Tokens)
 			}
-			slackNote(ctx, st, msg)
+			notify(ctx, st, msg)
 			return
 		}
 		msg := ":speech_balloon: "
@@ -543,11 +548,11 @@ func reportPhase(ctx workflow.Context, st *State, res PhaseResult, fromPR bool) 
 		} else {
 			msg += fmt.Sprintf("\n_$%.4f · %d tokens_", res.CostUSD, res.Tokens)
 		}
-		slackNote(ctx, st, msg)
+		notify(ctx, st, msg)
 	case supervisor.EventAgentFailed:
-		slackNote(ctx, st, fmt.Sprintf(":x: Run failed at *%s*: %s", res.Stage, res.Error))
+		notify(ctx, st, fmt.Sprintf(":x: Run failed at *%s*: %s", res.Stage, res.Error))
 	case supervisor.EventNeedsInput:
-		slackNote(ctx, st, fmt.Sprintf(":grey_question: *Agent needs input*: %s\n_Reply in this thread to continue._", toSlackMrkdwn(strings.TrimSpace(res.Question))))
+		notify(ctx, st, fmt.Sprintf(":grey_question: *Agent needs input*: %s\n_Reply in this thread to continue._", toSlackMrkdwn(strings.TrimSpace(res.Question))))
 	}
 }
 
@@ -560,7 +565,7 @@ func finalSummary(ctx workflow.Context, st *State, start time.Time) {
 	}
 	fmt.Fprintf(&b, "rounds %d · $%.4f · %d tokens · %s",
 		st.ReviewRound, st.CumulativeCostUSD, st.CumulativeTokens, wall)
-	slackNote(ctx, st, b.String())
+	notify(ctx, st, b.String())
 }
 
 func slackCtx(ctx workflow.Context) workflow.Context {
@@ -580,7 +585,7 @@ func reconcilePR(ctx workflow.Context, st *State) {
 		st.PRNumber, st.PRURL = chk.Number, chk.URL
 		_ = workflow.UpsertTypedSearchAttributes(ctx,
 			temporal.NewSearchAttributeKeyInt64(SAPRNumber).ValueSet(int64(chk.Number)))
-		slackNote(ctx, st, fmt.Sprintf(":mag: Recovered PR <%s|#%d> (its open event was lost in transit).",
+		notify(ctx, st, fmt.Sprintf(":mag: Recovered PR <%s|#%d> (its open event was lost in transit).",
 			chk.URL, chk.Number))
 	}
 }
@@ -702,7 +707,7 @@ func ackFeedback(ctx workflow.Context, st *State, n int) {
 	if st.VMState != vmRunning {
 		msg += " _(waking a session, ~1 min)_"
 	}
-	slackNote(ctx, st, msg)
+	notify(ctx, st, msg)
 }
 
 // recordOutcome folds a phase result into workflow state and search attributes.
@@ -808,13 +813,13 @@ func postPRReply(ctx workflow.Context, st *State, reply string, replyToID int64)
 func startRelay(ctx workflow.Context, in WorkflowInput, st *State) workflow.Future {
 	var a *Activities
 	return workflow.ExecuteActivity(relayCtx(ctx), a.RelayTunnel,
-		RelayParams{SessionID: in.SessionID, Channel: st.SlackChannel, ThreadTS: st.SlackThreadTS})
+		RelayParams{SessionID: in.SessionID, Conversation: st.Conversation})
 }
 
 // promptDetachChoice shows the operator what they left in the working tree and asks, in plain
 // language, what to do with it. Their reply is handed to the agent, which interprets and acts.
 func promptDetachChoice(ctx workflow.Context, st *State, treeStatus string) {
-	slackNote(ctx, st, fmt.Sprintf(":inbox_tray: *Detached.* You left changes in the workspace:\n```\n%s\n```\nJust tell me what to do with them — e.g. \"commit those\", \"drop them\", or \"finish what I started\".",
+	notify(ctx, st, fmt.Sprintf(":inbox_tray: *Detached.* You left changes in the workspace:\n```\n%s\n```\nJust tell me what to do with them — e.g. \"commit those\", \"drop them\", or \"finish what I started\".",
 		truncate(treeStatus, 1000)))
 }
 
