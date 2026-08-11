@@ -57,6 +57,5 @@ a direct copy over a busy executable fails with `ETXTBSY`.
 
 ## House rules
 - Match the surrounding code's style, comment density, and idioms.
-- Keep public code and docs free of internal jargon / private identifiers (they've been sanitized — don't
-  reintroduce them).
+- Keep public code and docs free of internal jargon / private identifiers.
 - Keep changes small and reviewable; `make check` green is the bar for "done".
