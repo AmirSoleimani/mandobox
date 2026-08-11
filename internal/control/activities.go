@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,8 +30,6 @@ type Activities struct {
 	GatewayURL        string // egress gateway base — the guest's LLM base_url
 	BotUser           string
 	BotEmail          string
-	SlackBotToken     string // xoxb- token for chat.postMessage; empty → Slack posts are no-ops
-	SlackChannel      string // default channel for the session thread
 	// VSCodeTunnelToken is a pre-authenticated `code tunnel` token injected into guests so a human
 	// attach skips the device login. Empty → operators device-login on first attach.
 	VSCodeTunnelToken string
@@ -69,10 +66,8 @@ type Activities struct {
 	// no-op that errors (fail-closed), never reaps.
 	ReconcileAuthority reconcile.Authority
 	ReconcileGrace     time.Duration
-	slackClient        *http.Client
-	// Notifiers holds registered chat connectors keyed by Conversation.Kind — the worker assigns this
-	// at startup to add connectors (e.g. a Telegram Notifier). The default Slack connector need not be
-	// listed; it is built lazily from SlackBotToken (see notifierFor). Read-only once the worker starts.
+	// Notifiers holds the outbound half of every enabled+configured chat connector, keyed by
+	// Conversation.Kind. The worker populates it from internal/connectors at startup (read-only after).
 	Notifiers map[string]Notifier
 }
 

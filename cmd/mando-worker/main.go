@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chelodo/mandobox/internal/connectors"
 	"github.com/chelodo/mandobox/internal/control"
 	"github.com/chelodo/mandobox/internal/reconcile"
 	"github.com/chelodo/mandobox/internal/supervisor"
@@ -24,7 +25,6 @@ func main() {
 		natsURL, gatewayURL              string
 		appID, appKeyPath, org           string
 		instID, botUser, botEmail        string
-		slackToken, slackChannel         string
 	}{
 		temporalAddr: env("TEMPORAL_ADDRESS", "127.0.0.1:7233"),
 		namespace:    env("TEMPORAL_NAMESPACE", "fleet"),
@@ -40,8 +40,6 @@ func main() {
 		instID:       os.Getenv("GITHUB_INSTALLATION_ID"),
 		botUser:      env("GITHUB_BOT_USER", "mando-agent[bot]"),
 		botEmail:     env("GITHUB_BOT_EMAIL", "mando-agent[bot]@users.noreply.github.com"),
-		slackToken:   os.Getenv("SLACK_BOT_TOKEN"),
-		slackChannel: os.Getenv("SLACK_CHANNEL"),
 	}
 	// Optional pre-authenticated `code tunnel` token — injected into every guest so a human attach
 	// skips the device login. Absent → operators device-login on first attach.
@@ -108,8 +106,6 @@ func main() {
 		GatewayURL:              cfg.gatewayURL,
 		BotUser:                 cfg.botUser,
 		BotEmail:                cfg.botEmail,
-		SlackBotToken:           cfg.slackToken,
-		SlackChannel:            cfg.slackChannel,
 		VSCodeTunnelToken:       vscodeTunnelToken,
 		VSCodeTunnelHostname:    vscodeTunnelHostname,
 		BoxConfigPath:           boxConfigPath,
@@ -129,14 +125,18 @@ func main() {
 		ReconcileGrace:     parseDurationOr(env("RECONCILE_GRACE", "3m"), 3*time.Minute),
 	}
 
-	// Optional second chat connector, demonstrating the Notifier seam: set TELEGRAM_BOT_TOKEN to also
-	// post session updates to Telegram. Registration is a plain map assignment (never a method — that
-	// would crash RegisterActivity; see control/register_test.go). Slack needs no wiring (built lazily).
-	if tok := os.Getenv("TELEGRAM_BOT_TOKEN"); tok != "" {
-		acts.Notifiers = map[string]control.Notifier{
-			"telegram": control.NewTelegramNotifier(tok, os.Getenv("TELEGRAM_DEFAULT_CHAT")),
+	// Register the outbound half of every enabled + configured chat connector (Slack, Telegram, …). The
+	// set is governed by connectors.json + the per-connector secret env; the dashboard toggles it and
+	// restarts this worker. No lazy fallback — a disabled connector simply isn't registered.
+	connCfg := connectors.LoadConfig(env("CONNECTORS_CONFIG", "/etc/fleet/connectors.json"))
+	acts.Notifiers = map[string]control.Notifier{}
+	for _, c := range connectors.Registry() {
+		if connectors.Enabled(connCfg, c) {
+			if n := c.Notifier(); n != nil {
+				acts.Notifiers[c.Kind()] = n
+				log.Printf("mando-worker: connector %q outbound registered", c.Kind())
+			}
 		}
-		log.Printf("mando-worker: telegram connector registered")
 	}
 
 	w := worker.New(c, control.TaskQueue, worker.Options{})

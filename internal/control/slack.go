@@ -23,12 +23,10 @@ type slackNotifier struct {
 
 func (s *slackNotifier) Kind() string { return DefaultChatKind }
 
-// slackHTTP is the shared client used to build the lazy Slack notifier.
-func (a *Activities) slackHTTP() *http.Client {
-	if a.slackClient != nil {
-		return a.slackClient
-	}
-	return &http.Client{Timeout: 15 * time.Second}
+// NewSlackNotifier builds the Slack outbound connector from a bot token + default channel. Exported so
+// the connectors registry can construct it (mirrors NewTelegramNotifier).
+func NewSlackNotifier(token, defaultChannel string) Notifier {
+	return &slackNotifier{token: token, defaultChannel: defaultChannel, client: &http.Client{Timeout: 15 * time.Second}}
 }
 
 // Post sends text to the conversation. An empty conv.Thread starts a new thread (the root message)

@@ -1,4 +1,4 @@
-package main
+package connectors
 
 import "testing"
 
@@ -31,10 +31,10 @@ func TestParseDispatch(t *testing.T) {
 	}{
 		{"owner/repo do the thing", "owner/repo", "do the thing", false, true},
 		{"--cheap owner/repo fix the lint", "owner/repo", "fix the lint", true, true},
-		{"noslug do it", "", "", false, false}, // repo must contain a slash
-		{"owner/repo", "", "", false, false},   // missing prompt
+		{"noslug do it", "", "", false, false},
+		{"owner/repo", "", "", false, false},
 		{"", "", "", false, false},
-		{"--cheap owner/repo", "", "", false, false}, // cheap but no prompt
+		{"--cheap owner/repo", "", "", false, false},
 	}
 	for _, c := range cases {
 		repo, prompt, cheap, ok := parseDispatch(c.rest)
