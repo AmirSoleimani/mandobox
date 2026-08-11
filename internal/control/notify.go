@@ -54,10 +54,10 @@ type Notifier interface {
 	Update(ctx context.Context, conv Conversation, messageID, text string) error
 }
 
-// notifierFor returns the Notifier for a connector kind, or nil when none is configured (the
-// PostMessage/UpdateMessage activities then no-op). Connectors are registered by the worker in the
-// Activities.Notifiers map (keyed by Kind); the default Slack connector need not be — it is built
-// lazily from the worker's SlackBotToken/SlackChannel so existing deploys need no extra wiring.
+// notifierFor returns the Notifier for a connector kind, or nil when it isn't registered — i.e. the
+// connector is disabled or unconfigured (the PostMessage/UpdateMessage activities then no-op). The
+// worker populates Activities.Notifiers from the enabled+configured connectors (internal/connectors) at
+// startup, so enable/disable governs outbound with no lazy fallback.
 //
 // Registration is a plain map assignment (Activities.Notifiers), NOT a method: the worker registers the
 // whole Activities struct as Temporal activities via RegisterActivity, which reflects over every
@@ -67,13 +67,7 @@ func (a *Activities) notifierFor(kind string) Notifier {
 	if kind == "" {
 		kind = DefaultChatKind
 	}
-	if n, ok := a.Notifiers[kind]; ok {
-		return n
-	}
-	if kind == DefaultChatKind && a.SlackBotToken != "" {
-		return &slackNotifier{token: a.SlackBotToken, defaultChannel: a.SlackChannel, client: a.slackHTTP()}
-	}
-	return nil
+	return a.Notifiers[kind]
 }
 
 // PostMessageParams drives the generic outbound activity. The workflow calls this for every chat

@@ -1,4 +1,4 @@
-BINS := mando-agent fc-supervisor mando-gateway mando-worker webhook-rx nats-bridge mando-dispatch slack-gateway telegram-gateway mando-natsauth
+BINS := mando-agent fc-supervisor mando-gateway mando-worker webhook-rx nats-bridge mando-dispatch mando-connectors mando-natsauth
 DIST := bin
 
 .PHONY: build test vet check dist dist-dashboard test-dashboard clean
