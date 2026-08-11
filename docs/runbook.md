@@ -254,8 +254,8 @@ printf '%s' 'C0…'    > secrets/slack-channel       # default channel id
 ansible-playbook deploy.yml --tags control_plane
 ```
 
-Without those, the worker's Slack posts no-op and `slack-gateway` stays stopped — everything else
-runs unchanged.
+Without those, the worker's Slack posts no-op and `mando-connectors` skips the Slack connector —
+everything else runs unchanged.
 
 ## Egress policy (what the agent can reach)
 
