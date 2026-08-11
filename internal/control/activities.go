@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/acme/mandobox/internal/natsauth"
-	"github.com/acme/mandobox/internal/reconcile"
-	"github.com/acme/mandobox/internal/supervisor"
+	"github.com/AmirSoleimani/mandobox/internal/natsauth"
+	"github.com/AmirSoleimani/mandobox/internal/reconcile"
+	"github.com/AmirSoleimani/mandobox/internal/supervisor"
 	"github.com/nats-io/nats.go"
 	"go.temporal.io/sdk/activity"
 )

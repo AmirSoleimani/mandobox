@@ -1,6 +1,6 @@
 [Unit]
 Description=mandobox management console (localhost-only, reached over SSH tunnel)
-Documentation=https://github.com/acme/mandobox
+Documentation=https://github.com/AmirSoleimani/mandobox
 After=network-online.target temporal.service
 Wants=network-online.target
 

@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/acme/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 )
 
 // socketWait is how long to wait for Firecracker's API socket to appear after jailer start.

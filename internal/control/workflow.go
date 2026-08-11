@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/acme/mandobox/internal/supervisor"
+	"github.com/AmirSoleimani/mandobox/internal/supervisor"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )

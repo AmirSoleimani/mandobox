@@ -1,4 +1,4 @@
-module github.com/acme/mandobox/dashboard
+module github.com/AmirSoleimani/mandobox/dashboard
 
 go 1.25.5
 

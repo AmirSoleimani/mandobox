@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/acme/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 )
 
 // BootConfig is the guest's boot configuration, parsed from the MMDS JSON that mando-agent

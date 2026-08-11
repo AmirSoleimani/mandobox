@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/acme/mandobox/internal/fleetagent"
+	"github.com/AmirSoleimani/mandobox/internal/fleetagent"
 )
 
 func main() {

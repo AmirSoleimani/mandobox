@@ -1,6 +1,6 @@
 package control
 
-import "github.com/acme/mandobox/internal/supervisor"
+import "github.com/AmirSoleimani/mandobox/internal/supervisor"
 
 // buildMMDS assembles the mando-agent mmds_payload from launch params. It sets everything the
 // guest's BootConfig.validate() requires except `network` and `session_id`, which mando-agent

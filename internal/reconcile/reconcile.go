@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/acme/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 )
 
 // VM is the minimal view of a running VM, decoded from mando-agent's GET /vms.

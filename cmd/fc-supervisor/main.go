@@ -12,7 +12,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/acme/mandobox/internal/supervisor"
+	"github.com/AmirSoleimani/mandobox/internal/supervisor"
 )
 
 func main() {

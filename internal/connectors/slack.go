@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/acme/mandobox/internal/control"
+	"github.com/AmirSoleimani/mandobox/internal/control"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"

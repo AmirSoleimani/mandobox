@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/acme/mandobox/internal/control"
+	"github.com/AmirSoleimani/mandobox/internal/control"
 )
 
 // Connector is a chat platform's full adapter.

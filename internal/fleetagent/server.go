@@ -11,7 +11,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/acme/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 )
 
 // Server exposes the mando-agent HTTP API. It is mTLS-only in production; the control plane

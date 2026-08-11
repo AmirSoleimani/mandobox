@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/acme/mandobox/internal/natsauth"
+	"github.com/AmirSoleimani/mandobox/internal/natsauth"
 	"github.com/nats-io/nats.go"
 )
 
