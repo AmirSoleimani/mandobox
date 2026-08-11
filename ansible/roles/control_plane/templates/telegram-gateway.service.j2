@@ -1,0 +1,26 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Fleet Telegram gateway (Bot API long-poll: /mando dispatch + chat replies)
+After=network-online.target temporal.service
+Wants=network-online.target
+Requires=temporal.service
+
+[Service]
+Type=simple
+Environment=TEMPORAL_ADDRESS={{ control_plane_temporal_address }}
+Environment=TEMPORAL_NAMESPACE={{ control_plane_temporal_namespace }}
+EnvironmentFile={{ control_plane_conf_dir }}/telegram.env
+ExecStart=/usr/local/bin/telegram-gateway
+Restart=on-failure
+RestartSec=5
+# Hardening (defense-in-depth): this handles untrusted Telegram input.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target

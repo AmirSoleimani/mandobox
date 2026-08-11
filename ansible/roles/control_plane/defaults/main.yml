@@ -41,6 +41,11 @@ control_plane_slack_bot_token_src: "{{ playbook_dir }}/../secrets/slack-bot-toke
 control_plane_slack_app_token_src: "{{ playbook_dir }}/../secrets/slack-app-token"
 control_plane_slack_channel_src: "{{ playbook_dir }}/../secrets/slack-channel"
 
+# Telegram (optional — Bot API long-poll). If the bot token exists on the controller, the worker posts
+# to Telegram and telegram-gateway runs; otherwise both degrade gracefully (no Telegram).
+control_plane_telegram_bot_token_src: "{{ playbook_dir }}/../secrets/telegram-bot-token"
+control_plane_telegram_chat_src: "{{ playbook_dir }}/../secrets/telegram-chat"
+
 # VS Code tunnel (optional). A pre-authenticated `code tunnel` token — run `code tunnel user login`
 # once on the controller and save the resulting token.json to secrets/vscode-tunnel-token.json. If
 # present, the worker injects it into every guest so a human attach skips the GitHub device login;

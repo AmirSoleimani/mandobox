@@ -14,6 +14,7 @@ dashboard/dashboard
 /nats-bridge
 /nats-sub
 /slack-gateway
+/telegram-gateway
 /webhook-rx
 /fc-supervisor
 

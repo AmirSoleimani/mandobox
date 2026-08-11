@@ -81,6 +81,12 @@ func managedSecrets() []secretDef {
 			Restart: [][]string{{"mando-worker", "fleet-worker"}, {"slack-gateway"}}, Hint: "xapp-…", Editable: true,
 		},
 		{
+			Name: "telegram-bot-token", Label: "Telegram bot token", Kind: "env",
+			Desc:    "Telegram Bot API token (from @BotFather). Lets the worker post session updates and telegram-gateway receive /mando commands and chat replies. Optional.",
+			Targets: []secretTarget{{Path: "/etc/fleet/telegram.env", Key: "TELEGRAM_BOT_TOKEN"}},
+			Restart: [][]string{{"mando-worker", "fleet-worker"}, {"telegram-gateway"}}, Hint: "123456789:ABC-…", Editable: true,
+		},
+		{
 			Name: "webhook-secret", Label: "GitHub webhook secret", Kind: "env",
 			Desc:    "HMAC secret that signs GitHub webhook deliveries. webhook-rx verifies every payload against it, so only GitHub-signed events (PR reviews, comments, CI) drive a session.",
 			Targets: []secretTarget{{Path: "/etc/fleet/webhook-secret.env", Key: "GITHUB_WEBHOOK_SECRET"}},

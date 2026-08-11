@@ -10,6 +10,7 @@ Not sure where to start? Here's the map.
 - **[Server setup](hetzner-setup.md)** — provisioning the dedicated box (KVM, disk layout).
 - **[GitHub App](github-setup.md)** — creating and installing the App the agents act as.
 - **[Slack](slack.md)** — the `/mando` command and driving tasks from Slack.
+- **[Telegram](telegram.md)** — the same `/mando` flow over a Telegram bot (Bot API, no public URL).
 - **[Operator runbook](runbook.md)** — the detailed deploy guide and every configuration knob
   (secrets, model routing, egress policy, keep-alive, troubleshooting).
 

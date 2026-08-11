@@ -49,6 +49,20 @@ func connectorDefs() []connectorDef {
 			},
 			Doc: "docs/slack.md",
 		},
+		{
+			ID:      "telegram",
+			Label:   "Telegram",
+			Blurb:   "Post session updates to a Telegram chat and take commands from it — send /mando to dispatch a task. Runs over the Bot API (long-poll, no public URL).",
+			Secrets: []string{"telegram-bot-token"},
+			Steps: []string{
+				"Message @BotFather → /newbot, follow the prompts, and copy the HTTP API token into “Telegram bot token” below.",
+				"@BotFather → /setprivacy → your bot → Disable, so it can read your plain replies (needed to steer a session). A 1:1 chat doesn't strictly need this.",
+				"Start a chat with the bot (or add it to a group and let it read messages).",
+				"Send “/mando owner/repo <task>” in that chat to dispatch; reply in the chat to steer. Use “/mando --cheap …” for the cheap model.",
+				"Routing is chat-scoped — one active session per chat; use separate chats for concurrent sessions.",
+			},
+			Doc: "docs/telegram.md",
+		},
 	}
 }
 

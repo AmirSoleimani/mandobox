@@ -126,6 +126,42 @@
     - Restart mando-worker
     - Restart slack-gateway
 
+# ---- Telegram (optional): only if the bot token exists on the controller ----
+- name: Check for the Telegram bot token on the controller
+  ansible.builtin.stat:
+    path: "{{ control_plane_telegram_bot_token_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: control_plane_telegram_stat
+
+- name: Check for an optional Telegram default chat on the controller
+  ansible.builtin.stat:
+    path: "{{ control_plane_telegram_chat_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: control_plane_telegram_chat_stat
+
+- name: Decide whether Telegram is configured
+  ansible.builtin.set_fact:
+    control_plane_telegram_enabled: "{{ control_plane_telegram_stat.stat.exists }}"
+
+- name: Install the Telegram env file (Tier-0)
+  ansible.builtin.copy:
+    content: |
+      TELEGRAM_BOT_TOKEN={{ lookup('file', control_plane_telegram_bot_token_src) | trim }}
+      TELEGRAM_DEFAULT_CHAT={{ lookup('file', control_plane_telegram_chat_src) | trim if control_plane_telegram_chat_stat.stat.exists else '' }}
+    dest: "{{ control_plane_conf_dir }}/telegram.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: control_plane_telegram_enabled
+  notify:
+    - Restart mando-worker
+    - Restart telegram-gateway
+
 # ---- VS Code tunnel token (optional): only if the controller has one ----
 - name: Check for the VS Code tunnel token on the controller
   ansible.builtin.stat:
@@ -166,12 +202,14 @@
     - webhook-rx.service
     - nats-bridge.service
     - slack-gateway.service
+    - telegram-gateway.service
   notify:
     - Reload systemd daemon (control-plane)
     - Restart mando-worker
     - Restart webhook-rx
     - Restart nats-bridge
     - Restart slack-gateway
+    - Restart telegram-gateway
 
 - name: Apply unit changes before enabling
   ansible.builtin.meta: flush_handlers
@@ -191,3 +229,9 @@
     name: slack-gateway
     enabled: "{{ control_plane_slack_enabled }}"
     state: "{{ 'started' if control_plane_slack_enabled else 'stopped' }}"
+
+- name: Enable and start telegram-gateway when Telegram is configured
+  ansible.builtin.systemd_service:
+    name: telegram-gateway
+    enabled: "{{ control_plane_telegram_enabled }}"
+    state: "{{ 'started' if control_plane_telegram_enabled else 'stopped' }}"

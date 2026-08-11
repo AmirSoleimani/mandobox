@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-// telegramNotifier is a second chat connector — the concrete proof the Notifier abstraction is
-// complete. It renders the workflow's canonical Markdown into Telegram HTML (render.go) and posts via
-// the Bot API. It implements Notifier exactly like slackNotifier, so wiring it is one line in the
-// worker: acts.Notifiers = map[string]control.Notifier{"telegram": control.NewTelegramNotifier(tok, chat)}.
-// The workflow, routing, and message construction are untouched.
+// telegramNotifier is the Telegram chat connector's outbound half. It renders the workflow's canonical
+// mrkdwn into Telegram HTML (render.go) and posts via the Bot API. Routing is chat-scoped: a session's
+// Conversation.Thread is its chat id, so every message in that chat belongs to the session and the
+// inbound telegram-gateway routes replies by conversation="telegram:<chat_id>". (Forum-topic threading
+// for concurrent sessions in one chat is a future enhancement; today it's one active session per chat.)
 type telegramNotifier struct {
 	token       string
 	defaultChat string
@@ -40,25 +40,21 @@ func (t *telegramNotifier) Post(ctx context.Context, conv Conversation, text str
 	if chat == "" {
 		chat = t.defaultChat
 	}
+	var out struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			MessageID int64 `json:"message_id"`
+			Chat      struct {
+				ID int64 `json:"id"`
+			} `json:"chat"`
+		} `json:"result"`
+		Description string `json:"description"`
+	}
 	body := map[string]any{
 		"chat_id":                  chat,
 		"text":                     canonicalToTelegramHTML(text),
 		"parse_mode":               "HTML",
 		"disable_web_page_preview": true,
-	}
-	if id, err := strconv.Atoi(conv.Thread); err == nil && conv.Thread != "" {
-		body["message_thread_id"] = id // forum-topic thread, when the chat uses them
-	}
-	var out struct {
-		OK     bool `json:"ok"`
-		Result struct {
-			MessageID       int64 `json:"message_id"`
-			MessageThreadID int64 `json:"message_thread_id"`
-			Chat            struct {
-				ID int64 `json:"id"`
-			} `json:"chat"`
-		} `json:"result"`
-		Description string `json:"description"`
 	}
 	if err := t.call(ctx, "sendMessage", body, &out); err != nil {
 		return NotifyResult{}, err
@@ -66,20 +62,13 @@ func (t *telegramNotifier) Post(ctx context.Context, conv Conversation, text str
 	if !out.OK {
 		return NotifyResult{}, fmt.Errorf("telegram sendMessage: %s", out.Description)
 	}
-	msgID := strconv.FormatInt(out.Result.MessageID, 10)
-	thread := conv.Thread
-	if thread == "" {
-		if out.Result.MessageThreadID != 0 {
-			thread = strconv.FormatInt(out.Result.MessageThreadID, 10)
-		} else {
-			thread = msgID // first message's id keys the "thread" when the chat has no topics
-		}
-	}
+	// Chat-scoped: the routing key is the chat id (canonical, from the API response when available), so
+	// every message in this chat maps back to the session.
 	channel := chat
 	if out.Result.Chat.ID != 0 {
 		channel = strconv.FormatInt(out.Result.Chat.ID, 10)
 	}
-	return NotifyResult{MessageID: msgID, Thread: thread, Channel: channel}, nil
+	return NotifyResult{MessageID: strconv.FormatInt(out.Result.MessageID, 10), Thread: channel, Channel: channel}, nil
 }
 
 func (t *telegramNotifier) Update(ctx context.Context, conv Conversation, messageID, text string) error {
