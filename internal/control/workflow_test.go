@@ -138,6 +138,41 @@ func (s *PRWorkflowSuite) Test_Reconcile_FoldsInMissedComment() {
 	s.Equal(1, delivered10, "the already-delivered comment must not be re-fed")
 }
 
+// End-to-end through the real workflow: the text handed to PostMessage is canonical chat markup (Slack
+// mrkdwn dialect). The Slack connector sends it as-is; non-Slack connectors translate it (the Telegram
+// translation is covered by TestTelegramRender).
+func (s *PRWorkflowSuite) Test_PostMessage_IsCanonicalChatMarkup() {
+	env := s.NewTestWorkflowEnvironment()
+	var a *control.Activities
+
+	var msgs []string
+	env.OnActivity(a.PostMessage, mock.Anything, mock.Anything).
+		Return(func(_ context.Context, p control.PostMessageParams) (control.NotifyResult, error) {
+			msgs = append(msgs, p.Text)
+			return control.NotifyResult{Thread: "T1", Channel: "C1"}, nil // non-empty → replies post too
+		})
+	env.OnActivity(a.MintCredentials, mock.Anything, mock.Anything).Return(control.Credentials{GitHubToken: "t"}, nil)
+	env.OnActivity(a.LaunchVM, mock.Anything, mock.Anything).Return(control.LaunchResult{GuestIP: "10.0.0.2"}, nil)
+	env.OnActivity(a.RunAgentPhase, mock.Anything, mock.Anything).
+		Return(control.PhaseResult{Outcome: "pr_opened", PRNumber: 7, PRURL: "https://github.com/o/r/pull/7",
+			Reply: "Fixed the **bug**.", CostUSD: 0.5, Tokens: 100}, nil).Once()
+	env.OnActivity(a.DestroyVM, mock.Anything, mock.Anything).Return(nil)
+
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(control.SignalPRClosed, control.PRClosedSignal{Merged: true, DeliveryID: "d"})
+	}, 200*time.Second)
+
+	env.ExecuteWorkflow(control.PRWorkflow, baseInput())
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	joined := strings.Join(msgs, "\n---\n")
+	// The workflow emits canonical chat markup (Slack mrkdwn dialect) via PostMessage; each connector
+	// renders it (the Telegram translation is covered by TestTelegramRender).
+	s.Contains(joined, "*PR opened*", "PR-opened announcement in the canonical dialect")
+	s.Contains(joined, "<https://github.com/o/r/pull/7|#7>", "canonical <url|label> link")
+}
+
 // A run that opens no PR tears down immediately without entering the review loop.
 // A first run that opens no PR no longer tears down instantly — it keeps the session so the operator
 // can supply what was missing (a plan/spec). With no follow-up, the idle keep-alive ends it cleanly.

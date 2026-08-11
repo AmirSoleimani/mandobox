@@ -35,19 +35,20 @@ type NotifyResult struct {
 
 // Notifier is one chat connector's outbound half. Implementations are host-side (real HTTP) and are
 // registered by the worker in Activities.Notifiers keyed by Kind. Adding a chat connector is: implement
-// this interface, assign it into Activities.Notifiers, and write an inbound translator that starts and
-// steers workflows (mirror cmd/slack-gateway). The workflow's routing and delivery never name a
-// connector; the one place a connector is not yet fully abstracted is message FORMATTING (see Post).
+// this interface (translating the canonical mrkdwn in Post), assign it into Activities.Notifiers, and
+// write an inbound translator that starts and steers workflows (mirror cmd/slack-gateway). The workflow
+// never names a connector — routing, delivery, AND message formatting are all connector-neutral.
+// telegramNotifier (telegram.go) is a second, working implementation that proves the seam.
 type Notifier interface {
 	// Kind is the connector this notifier handles (matches Conversation.Kind).
 	Kind() string
 	// Post sends text to conv. When conv.Thread is empty it starts the root message and returns the
 	// new thread id; otherwise it replies within conv.Thread.
 	//
-	// text is the workflow's canonical chat dialect, which is currently Slack-flavoured: mrkdwn
-	// (*bold*, <url|label>) plus :emoji: shortcodes. A non-Slack connector's Post is responsible for
-	// translating that into its own formatting. A connector-neutral/structured message model is a
-	// planned refinement; until then this is the one Slack-specific assumption a new connector inherits.
+	// text is canonical chat markup in Slack's mrkdwn dialect (the reference dialect): *bold*, _italic_,
+	// ~strike~, <url|label>, `code`, ```fences```, and :emoji: shortcodes. The Slack notifier sends it
+	// as-is; every other notifier translates it — e.g. canonicalToTelegramHTML (render.go). Translators
+	// are best-effort rewriters, not full parsers.
 	Post(ctx context.Context, conv Conversation, text string) (NotifyResult, error)
 	// Update edits a previously posted message in place (best-effort; connectors that can't may no-op).
 	Update(ctx context.Context, conv Conversation, messageID, text string) error

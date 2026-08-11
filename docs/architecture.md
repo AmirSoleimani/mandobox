@@ -198,10 +198,11 @@ to. GitHub is different: it's the *substrate* (every task ends in a PR), not a s
 Adding another chat connector (Telegram, WhatsApp, Discord, …) is three small, independent pieces —
 the workflow itself never changes:
 
-1. **Outbound** — implement the `Notifier` interface (`internal/control/notify.go`): `Post` (start a
-   thread / reply in one) and `Update`. Register it on the worker with `RegisterNotifier`. The workflow
-   only ever calls the generic `PostMessage`/`UpdateMessage` activities against a `Conversation{Kind,
-   Channel, Thread}`, so it routes to your connector automatically by `Kind`.
+1. **Outbound** — implement the `Notifier` interface (`internal/control/notify.go`): `Post`/`Update`,
+   rendering the canonical Markdown into your platform's format (mirror the Telegram renderer in
+   `render.go`). Register it by assigning `Activities.Notifiers[kind]` in the worker. The workflow only
+   ever calls the generic `PostMessage`/`UpdateMessage` activities against a `Conversation{Kind, Channel,
+   Thread}`, so it routes to your connector automatically by `Kind`.
 2. **Inbound** — write a small translator (mirror `cmd/slack-gateway`): receive the platform's events
    and turn them into the same two generic Temporal calls every dispatcher uses —
    `ExecuteWorkflow(PRWorkflow, WorkflowInput{Conversation: {Kind, Channel}})` to start, and
@@ -209,11 +210,12 @@ the workflow itself never changes:
    attribute (as `slack-gateway` uses `slack_thread`).
 3. **Config** — surface its secrets/setup on the dashboard's Connectors page.
 
-The workflow stays connector-agnostic for **routing and delivery**: it holds a `Conversation` (not a
-Slack channel) and routes replies by a namespaced `conversation` search attribute, so no workflow edit
-is needed. The one remaining Slack-specific assumption is message **formatting** — the workflow emits
-Slack-dialect text (mrkdwn + `:emoji:`), so a non-Slack connector's `Post` translates it. A
-connector-neutral message model is a planned refinement.
+The workflow stays fully connector-agnostic — routing, delivery, **and** formatting. It holds a
+`Conversation` (not a Slack channel), routes replies by a namespaced `conversation` search attribute,
+and emits canonical chat markup in **Slack's mrkdwn dialect** (`*bold*`, `<url|label>`, `` `code` ``,
+`:emoji:`) as the lingua franca. The Slack notifier sends it as-is (so Slack output is unchanged); every
+other notifier translates it — the Telegram notifier via `canonicalToTelegramHTML`
+(`internal/control/render.go`). `telegramNotifier` is a working second connector proving the seam.
 
 ## Configuration, deployment & further reading
 
