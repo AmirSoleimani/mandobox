@@ -3,6 +3,9 @@
 Thanks for your interest! Mandobox is self-hosted infrastructure for running AI coding agents in
 isolated micro-VMs, so contributions range from Go services to Ansible roles to docs.
 
+> **Working with an AI coding agent?** See **[AGENTS.md](AGENTS.md)** for build/test commands, the repo
+> map, and the control-plane footguns (Temporal determinism, the `RegisterActivity` trap, deploy notes).
+
 ## Ground rules
 
 - **Be honest in code and PRs.** No fake benchmarks, no "production-ready" claims without evidence.
