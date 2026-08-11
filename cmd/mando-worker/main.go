@@ -129,6 +129,16 @@ func main() {
 		ReconcileGrace:     parseDurationOr(env("RECONCILE_GRACE", "3m"), 3*time.Minute),
 	}
 
+	// Optional second chat connector, demonstrating the Notifier seam: set TELEGRAM_BOT_TOKEN to also
+	// post session updates to Telegram. Registration is a plain map assignment (never a method — that
+	// would crash RegisterActivity; see control/register_test.go). Slack needs no wiring (built lazily).
+	if tok := os.Getenv("TELEGRAM_BOT_TOKEN"); tok != "" {
+		acts.Notifiers = map[string]control.Notifier{
+			"telegram": control.NewTelegramNotifier(tok, os.Getenv("TELEGRAM_DEFAULT_CHAT")),
+		}
+		log.Printf("mando-worker: telegram connector registered")
+	}
+
 	w := worker.New(c, control.TaskQueue, worker.Options{})
 	w.RegisterWorkflow(control.PRWorkflow)
 	w.RegisterWorkflow(control.ReconcileWorkflow)
