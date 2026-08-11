@@ -18,12 +18,7 @@
     name: nats-bridge
     state: restarted
 
-- name: Restart slack-gateway
+- name: Restart mando-connectors
   ansible.builtin.systemd_service:
-    name: slack-gateway
-    state: restarted
-
-- name: Restart telegram-gateway
-  ansible.builtin.systemd_service:
-    name: telegram-gateway
+    name: mando-connectors
     state: restarted

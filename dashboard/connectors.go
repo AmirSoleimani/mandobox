@@ -5,6 +5,11 @@ package main
 // Adding a connector later (Linear, Jira, Discord) is a registry entry here plus its secrets in
 // secrets.go — the view and the UI are driven off this registry, nothing per-connector is hardcoded.
 
+import (
+	"encoding/json"
+	"os"
+)
+
 type connectorDef struct {
 	ID      string
 	Label   string
@@ -80,18 +85,55 @@ type connectorView struct {
 	Label     string                `json:"label"`
 	Blurb     string                `json:"blurb"`
 	Connected bool                  `json:"connected"` // true when every required secret is present
+	Enabled   bool                  `json:"enabled"`   // whether it should run (connectors.json)
 	Secrets   []connectorSecretView `json:"secrets"`
 	Steps     []string              `json:"steps,omitempty"`
 	Doc       string                `json:"doc,omitempty"`
 }
 
-type connectorStore struct{ secrets *secretStore }
+type connectorStore struct {
+	secrets    *secretStore
+	configPath string // connectors.json — the enable/disable config shared with the host + worker
+}
 
-func newConnectorStore(secrets *secretStore) *connectorStore {
-	return &connectorStore{secrets: secrets}
+func newConnectorStore(secrets *secretStore, configPath string) *connectorStore {
+	return &connectorStore{secrets: secrets, configPath: configPath}
+}
+
+type connectorEnable struct {
+	Enabled bool `json:"enabled"`
+}
+
+// loadConfig reads connectors.json ({"slack":{"enabled":true},…}); missing/invalid → empty.
+func (c *connectorStore) loadConfig() map[string]connectorEnable {
+	b, err := os.ReadFile(c.configPath)
+	if err != nil {
+		return map[string]connectorEnable{}
+	}
+	var m map[string]connectorEnable
+	if json.Unmarshal(b, &m) != nil {
+		return map[string]connectorEnable{}
+	}
+	return m
+}
+
+// setEnabled writes id's enabled flag into connectors.json (atomically), preserving other entries.
+func (c *connectorStore) setEnabled(id string, enabled bool) error {
+	m := c.loadConfig()
+	m[id] = connectorEnable{Enabled: enabled}
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := c.configPath + ".tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, c.configPath)
 }
 
 func (c *connectorStore) view() []connectorView {
+	cfg := c.loadConfig()
 	out := make([]connectorView, 0, len(connectorDefs()))
 	for _, d := range connectorDefs() {
 		cv := connectorView{ID: d.ID, Label: d.Label, Blurb: d.Blurb, Connected: len(d.Secrets) > 0, Steps: d.Steps, Doc: d.Doc}
@@ -105,6 +147,13 @@ func (c *connectorStore) view() []connectorView {
 				cv.Connected = false
 			}
 			cv.Secrets = append(cv.Secrets, s)
+		}
+		// Enabled: an explicit connectors.json entry wins; absent = on when configured (matching the
+		// connector host + worker default).
+		if e, ok := cfg[d.ID]; ok {
+			cv.Enabled = e.Enabled
+		} else {
+			cv.Enabled = cv.Connected
 		}
 		out = append(out, cv)
 	}

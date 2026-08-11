@@ -1,0 +1,26 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Fleet connector host (inbound for every enabled chat connector — Slack, Telegram, …)
+After=network-online.target temporal.service
+Wants=network-online.target
+Requires=temporal.service
+
+[Service]
+Type=simple
+EnvironmentFile={{ control_plane_conf_dir }}/control-plane.env
+EnvironmentFile=-{{ control_plane_conf_dir }}/slack.env
+EnvironmentFile=-{{ control_plane_conf_dir }}/telegram.env
+ExecStart=/usr/local/bin/mando-connectors
+Restart=on-failure
+RestartSec=5
+# Hardening (defense-in-depth): this handles untrusted inbound chat input.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
