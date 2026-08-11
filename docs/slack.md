@@ -5,20 +5,21 @@ slash command, watch each task's whole life in a dedicated thread, and steer a r
 in its thread — all without exposing anything to the public internet.
 
 - **Outbound** (fleet → Slack): the Temporal worker posts a thread per session via `chat.postMessage`.
-- **Inbound** (Slack → fleet): `slack-gateway` connects to Slack over **Socket Mode** (an outbound
-  WebSocket), so Slack never needs to reach your box. It translates the `/mando` command and thread
-  replies into Temporal actions.
+- **Inbound** (Slack → fleet): the **`mando-connectors`** host connects to Slack over **Socket Mode** (an
+  outbound WebSocket), so Slack never needs to reach your box. It translates the `/mando` command and
+  thread replies into Temporal actions. (It's one process that serves every enabled connector — Slack,
+  Telegram, … — not a Slack-specific binary.)
 
 ```
-  You in Slack ──/mando──▶ slack-gateway ──starts──▶ PRWorkflow (Temporal)
+  You in Slack ──/mando──▶ mando-connectors ──starts──▶ PRWorkflow (Temporal)
        ▲                        (Socket Mode)              │
        │                                                   │ activities
        └──────── thread posts ◀── mando-worker ◀───────────┘
-                 (chat.postMessage)      RunAgentPhase / PostSlack / …
+                 (chat.postMessage)      RunAgentPhase / PostMessage / …
 ```
 
 Everything degrades gracefully: if the Slack secrets are absent, the worker's Slack posts become
-no-ops and `slack-gateway` stays stopped — the fleet still runs, just without Slack.
+no-ops and `mando-connectors` simply skips the Slack connector — the fleet still runs, just without Slack.
 
 ---
 
@@ -62,15 +63,17 @@ printf '%s' 'C0…'    > secrets/slack-channel      # default channel id
 cd ansible && ansible-playbook deploy.yml --tags control_plane
 ```
 
-The `control_plane` role writes `/etc/fleet/slack.env` (mode 0600) on the box and starts
-`slack-gateway`; the worker picks up `SLACK_BOT_TOKEN` / `SLACK_CHANNEL` and starts posting.
+The `control_plane` role writes `/etc/fleet/slack.env` (mode 0600) on the box and (re)starts the
+`mando-connectors` host, which runs the Slack connector; the worker registers the Slack notifier from the
+same secrets and starts posting. You can also enable/disable Slack from the dashboard
+(**Connectors → Slack**) without a redeploy — it toggles `connectors.json` and restarts the host.
 
 ### Verify
 
 ```sh
-ssh root@<box> 'systemctl is-active slack-gateway; journalctl -u slack-gateway -n 3 -o cat'
+ssh root@<box> 'systemctl is-active mando-connectors; journalctl -u mando-connectors -n 5 -o cat'
 # → active
-# → slack-gateway: connected as fleet (U0…)
+# → connectors/slack: connected as fleet (U0…)
 ```
 
 Then in your channel: `/mando your-org/hello-gents add a CHANGELOG.md`. Within a few seconds a
@@ -83,12 +86,12 @@ thread appears.
 | `SLACK_BOT_TOKEN` | `secrets/slack-bot-token` | — | `xoxb-` token; empty ⇒ no Slack |
 | `SLACK_APP_TOKEN` | `secrets/slack-app-token` | — | `xapp-` Socket Mode token |
 | `SLACK_CHANNEL` | `secrets/slack-channel` | — | fallback channel for dispatches started outside Slack |
-| `CLAUDE_MODEL` | `slack-gateway` env | `claude-sonnet-5` | default model id |
-| `CLAUDE_CHEAP_MODEL` | `slack-gateway` env | `claude-haiku-4-5-20251001` | model for `--cheap` |
-| `BASE_BRANCH` | `slack-gateway` env | `main` | branch the agent forks from |
+| default model | active **provider** (dashboard → Model, `/etc/fleet/provider.json`) | provider's model | model for a normal dispatch — set by the active provider, not a connector env |
+| `CLAUDE_CHEAP_MODEL` | `mando-connectors` env | `claude-haiku-4-5-20251001` | model for `--cheap` |
+| `BASE_BRANCH` | `mando-connectors` env | `main` | branch the agent forks from |
 
 The image launched is always the currently active golden image (`/var/lib/fleet/images/current.sha`),
-re-read on every dispatch — so rebuilding the image needs no gateway restart.
+re-read on every dispatch — so rebuilding the image needs no connector restart.
 
 ---
 
@@ -296,10 +299,10 @@ it from the Temporal UI).
 
 | Symptom | Check |
 |---|---|
-| `/mando` says "dispatch failed" | `journalctl -u slack-gateway`; is Temporal up? is the repo `owner/name`? |
+| `/mando` says "dispatch failed" | `journalctl -u mando-connectors`; is Temporal up? is the repo `owner/name`? |
 | No thread appears after `/mando` | worker Slack posts need `SLACK_BOT_TOKEN`; is the bot **in the channel**? re-run the `control_plane` deploy |
 | Thread replies do nothing | bot needs `channels:history` + the `message.channels` event subscription, and must be a channel member; the reply must be **in the thread**, not top-level |
-| `slack-gateway` won't start | it exits without both tokens — confirm `/etc/fleet/slack.env` has `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` |
+| Slack connector not running | `mando-connectors` skips Slack unless `/etc/fleet/slack.env` has both `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN`; `journalctl -u mando-connectors` shows either `connectors/slack: connected as …` or `slack disabled or unconfigured — skipping` |
 | Merges/review comments ignored | that's the GitHub webhook path — see [What needs the webhook receiver](#what-needs-the-webhook-receiver) |
 | Wrong/invalid model | dispatch a real model id (Claude Code expands its own aliases); LiteLLM passes it through |
 
@@ -309,7 +312,7 @@ it from the Temporal UI).
 
 - **Socket Mode = no inbound exposure.** The bot dials out to Slack; your box accepts no Slack traffic.
 - **Tokens are host-side.** Bot/app tokens live in `/etc/fleet/slack.env` (0600) and never enter a guest.
-- **The gateway only translates.** It starts workflows and forwards `user_message` signals — all policy
-  (debounce, dedupe, budgets, teardown) lives in the Temporal workflow, not in Slack.
+- **The connector only translates.** `mando-connectors` starts workflows and forwards `user_message`
+  signals — all policy (debounce, dedupe, budgets, teardown) lives in the Temporal workflow, not in Slack.
 - **Anyone who can post in the channel can dispatch.** Restrict the channel's membership accordingly;
   the fleet has no per-user authorization in v1.

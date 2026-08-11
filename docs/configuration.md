@@ -164,7 +164,7 @@ they sit above the runner and don't change.
 | Model | `WorkflowInput.Model` → LiteLLM | existing |
 | Agent harness | `BootConfig.Agent` → runner select in `fc-supervisor` | **new** field + switch |
 | Instructions | write to `CLAUDE.md`/`AGENTS.md` in the guest | **new** (small) |
-| Warnings | `PostSlack` into the thread | existing |
+| Warnings | `PostMessage` into the thread | existing |
 
 ## Build sequence
 
