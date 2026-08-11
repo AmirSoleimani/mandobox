@@ -44,12 +44,16 @@ what will bite you.
   egress gateway injects the key host-side. Never add code that ships a Tier-0 secret into MMDS or a guest.
 
 ## Deploying
-Fresh provisioning is Ansible (`ansible/`, canonical `mando-*` unit names). Note: the current running box
-predates that rename and uses **`fleet-*` unit names** (worker/gateway/agent), so redeploys there are
-targeted `scp` + a service restart, not a full Ansible run. Overwrite a *running* binary with
-**scp-to-temp + `mv`** (a direct `scp` over a running executable fails with `ETXTBSY`). **Before** rolling
-the worker or the image, check for live sessions (`temporal workflow list … ExecutionStatus='Running'`) and
-VMs — **never disrupt a live session** (one with an open PR is still live).
+Provisioning and deploys are Ansible (`ansible/`): one dedicated `/dev/kvm` host, a systemd unit per
+service. Two rules hold regardless of environment:
+- **Never disrupt a live session.** Before rolling the worker or rebuilding the golden image, check for
+  running work (`temporal workflow list … ExecutionStatus='Running'`) and live VMs. A session with an open
+  PR is still live.
+- **Determinism gates a worker swap.** Activity-side changes are safe any time; a structural `PRWorkflow`
+  change must deploy on a drained fleet (see Footguns).
+
+When overwriting a *running* binary in place (rather than via Ansible), write to a temp path and `mv` it —
+a direct copy over a busy executable fails with `ETXTBSY`.
 
 ## House rules
 - Match the surrounding code's style, comment density, and idioms.
