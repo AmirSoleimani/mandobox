@@ -116,10 +116,17 @@ function connectorSecretRow(s) {
 }
 function connectorCard(c) {
   const card = el("div", { class: "prov-card" });
-  card.append(el("div", { class: "prov-card-head" },
+  const head = el("div", { class: "prov-card-head" },
     el("span", { class: "prov-name" }, c.label),
     el("span", { class: "prov-spacer" }),
-    el("span", { class: "badge " + (c.connected ? "badge-ok" : "badge-warn") }, c.connected ? "connected" : "needs setup")));
+    el("span", { class: "badge " + (c.connected ? "badge-ok" : "badge-warn") }, c.connected ? "connected" : "needs setup"));
+  if (c.connected) {
+    head.append(el("span", { class: "badge " + (c.enabled ? "badge-ok" : "badge-warn") }, c.enabled ? "enabled" : "disabled"));
+    const toggle = el("button", { class: "btn btn-sm" }, c.enabled ? "Disable" : "Enable");
+    toggle.addEventListener("click", () => setConnectorEnabled(c.id, !c.enabled));
+    head.append(toggle);
+  }
+  card.append(head);
   card.append(el("div", { class: "prov-blurb" }, c.blurb));
   if (c.steps && c.steps.length) {
     const det = el("details", { class: "conn-guide" });
@@ -150,6 +157,14 @@ async function setConnectorSecret(name, input) {
     input.value = "";
     const restarted = res.restarted && res.restarted.length ? " · restarted " + res.restarted.join(", ") : "";
     connMsg(res.warning ? "err" : "ok", res.warning || ("Saved" + restarted + "."));
+    loadConnectors();
+  } catch (e) { connMsg("err", e.message); }
+}
+async function setConnectorEnabled(id, enabled) {
+  try {
+    const res = await api("/api/connectors/enable", { method: "POST", headers: JSON_HDR, body: JSON.stringify({ id, enabled }) });
+    const restarted = res.restarted && res.restarted.length ? " · restarted " + res.restarted.join(", ") : "";
+    connMsg("ok", (enabled ? "Enabled" : "Disabled") + restarted + ".");
     loadConnectors();
   } catch (e) { connMsg("err", e.message); }
 }

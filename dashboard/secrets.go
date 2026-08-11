@@ -70,21 +70,21 @@ func managedSecrets() []secretDef {
 		},
 		{
 			Name: "slack-bot-token", Label: "Slack bot token", Kind: "env",
-			Desc:    "Slack bot OAuth token (xoxb-). Lets the worker post session updates and the gateway read commands in your Slack workspace.",
+			Desc:    "Slack bot OAuth token (xoxb-). Lets the worker post session updates and the connector host read commands in your Slack workspace.",
 			Targets: []secretTarget{{Path: "/etc/fleet/slack.env", Key: "SLACK_BOT_TOKEN"}},
-			Restart: [][]string{{"mando-worker", "fleet-worker"}, {"slack-gateway"}}, Hint: "xoxb-…", Editable: true,
+			Restart: [][]string{{"mando-worker", "fleet-worker"}, {"mando-connectors"}}, Hint: "xoxb-…", Editable: true,
 		},
 		{
 			Name: "slack-app-token", Label: "Slack app token", Kind: "env",
 			Desc:    "Slack app-level token (xapp-) for Socket Mode. Lets the gateway receive Slack events without a public webhook.",
 			Targets: []secretTarget{{Path: "/etc/fleet/slack.env", Key: "SLACK_APP_TOKEN"}},
-			Restart: [][]string{{"mando-worker", "fleet-worker"}, {"slack-gateway"}}, Hint: "xapp-…", Editable: true,
+			Restart: [][]string{{"mando-worker", "fleet-worker"}, {"mando-connectors"}}, Hint: "xapp-…", Editable: true,
 		},
 		{
 			Name: "telegram-bot-token", Label: "Telegram bot token", Kind: "env",
-			Desc:    "Telegram Bot API token (from @BotFather). Lets the worker post session updates and telegram-gateway receive /mando commands and chat replies. Optional.",
+			Desc:    "Telegram Bot API token (from @BotFather). Lets the worker post session updates and the connector host receive /mando commands and chat replies. Optional.",
 			Targets: []secretTarget{{Path: "/etc/fleet/telegram.env", Key: "TELEGRAM_BOT_TOKEN"}},
-			Restart: [][]string{{"mando-worker", "fleet-worker"}, {"telegram-gateway"}}, Hint: "123456789:ABC-…", Editable: true,
+			Restart: [][]string{{"mando-worker", "fleet-worker"}, {"mando-connectors"}}, Hint: "123456789:ABC-…", Editable: true,
 		},
 		{
 			Name: "webhook-secret", Label: "GitHub webhook secret", Kind: "env",

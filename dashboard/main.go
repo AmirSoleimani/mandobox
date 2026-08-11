@@ -81,6 +81,7 @@ func main() {
 	natsAddr := flag.String("nats", env("NATS_ADDR", "172.31.0.1:4222"), "NATS host:port (health check)")
 	diskPath := flag.String("disk-path", env("FLEET_DATA_DIR", "/var/lib/fleet"), "fleet data dir (disk health check)")
 	providerPath := flag.String("provider-config", env("MANDO_PROVIDER_CONFIG", "/etc/fleet/provider.json"), "active-provider selection file (Config → Model)")
+	connectorsConfig := flag.String("connectors-config", env("MANDO_CONNECTORS_CONFIG", "/etc/fleet/connectors.json"), "connector enable/disable config (connectors.json)")
 	flag.Parse()
 
 	temporal := newTemporalStore(*temporalAddr, *namespace)
@@ -101,7 +102,7 @@ func main() {
 		health:       newHealthStore(*temporalAddr, *litellmAddr, *natsAddr, *fleetURL, *diskPath, vms, tools, secrets),
 		costs:        newCostStore(*logDir),
 		provider:     newProviderStore(*providerPath, secrets),
-		connectors:   newConnectorStore(secrets),
+		connectors:   newConnectorStore(secrets, *connectorsConfig),
 		meta:         newMetaStore(*logDir),
 	}
 	defer s.temporal.close()
@@ -122,6 +123,7 @@ func main() {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/costs", s.handleCosts)
 	mux.HandleFunc("/api/connectors", s.handleConnectors)
+	mux.HandleFunc("/api/connectors/enable", s.handleConnectorEnable)
 	mux.HandleFunc("/api/provider", s.handleProvider)
 	mux.HandleFunc("/api/provider/activate", s.handleProviderActivate)
 	mux.HandleFunc("/api/provider/secret", s.handleProviderSecret)
@@ -333,6 +335,36 @@ func (s *server) handleDispatch(w http.ResponseWriter, r *http.Request) {
 // Setting a connector's secret reuses the existing /api/secrets/rotate endpoint.
 func (s *server) handleConnectors(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"connectors": s.connectors.view()})
+}
+
+// handleConnectorEnable toggles a connector on/off: it writes connectors.json and restarts the worker
+// (outbound) and the connector host (inbound), which read that config at startup.
+func (s *server) handleConnectorEnable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		ID      string `json:"id"`
+		Enabled bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "id required"})
+		return
+	}
+	if err := s.connectors.setEnabled(body.ID, body.Enabled); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	var restarted []string
+	for _, candidates := range [][]string{{"mando-worker", "fleet-worker"}, {"mando-connectors"}} {
+		if u, err := restartFirst(ctx, candidates); err == nil {
+			restarted = append(restarted, u)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"connectors": s.connectors.view(), "restarted": restarted})
 }
 
 // handleProvider returns the provider catalog + which one is active (Config → Model).

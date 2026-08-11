@@ -13,7 +13,7 @@ control_plane_binaries:
   - webhook-rx
   - nats-bridge
   - mando-dispatch
-  - slack-gateway
+  - mando-connectors
 
 # GitHub App — installation-token minting (Tier-0 private key stays host-side).
 # Set these to YOUR GitHub App's values (see docs/github-setup.md). Override in a gitignored
@@ -36,15 +36,19 @@ control_plane_bot_email: "your-app-name[bot]@users.noreply.github.com"
 control_plane_webhook_secret_src: "{{ playbook_dir }}/../secrets/webhook-secret"
 
 # Slack (optional — Socket Mode). If these three secrets exist on the controller, the worker
-# posts to Slack and slack-gateway runs; otherwise both degrade gracefully (no Slack).
+# posts to Slack and the mando-connectors host runs it; otherwise both degrade gracefully (no Slack).
 control_plane_slack_bot_token_src: "{{ playbook_dir }}/../secrets/slack-bot-token"
 control_plane_slack_app_token_src: "{{ playbook_dir }}/../secrets/slack-app-token"
 control_plane_slack_channel_src: "{{ playbook_dir }}/../secrets/slack-channel"
 
 # Telegram (optional — Bot API long-poll). If the bot token exists on the controller, the worker posts
-# to Telegram and telegram-gateway runs; otherwise both degrade gracefully (no Telegram).
+# to Telegram and the mando-connectors host runs it; otherwise both degrade gracefully (no Telegram).
 control_plane_telegram_bot_token_src: "{{ playbook_dir }}/../secrets/telegram-bot-token"
 control_plane_telegram_chat_src: "{{ playbook_dir }}/../secrets/telegram-chat"
+
+# Connector enable/disable config (dashboard-managed connectors.json). Absent/empty → every configured
+# connector runs; a dashboard-written {"slack":{"enabled":false}} turns one off.
+control_plane_connectors_config: "{{ control_plane_conf_dir }}/connectors.json"
 
 # VS Code tunnel (optional). A pre-authenticated `code tunnel` token — run `code tunnel user login`
 # once on the controller and save the resulting token.json to secrets/vscode-tunnel-token.json. If

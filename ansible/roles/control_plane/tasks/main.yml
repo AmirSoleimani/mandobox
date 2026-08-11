@@ -124,7 +124,7 @@
   when: control_plane_slack_enabled
   notify:
     - Restart mando-worker
-    - Restart slack-gateway
+    - Restart mando-connectors
 
 # ---- Telegram (optional): only if the bot token exists on the controller ----
 - name: Check for the Telegram bot token on the controller
@@ -160,7 +160,19 @@
   when: control_plane_telegram_enabled
   notify:
     - Restart mando-worker
-    - Restart telegram-gateway
+    - Restart mando-connectors
+
+- name: Install the default connectors enable/disable config (dashboard-managed; preserved if present)
+  ansible.builtin.copy:
+    content: "{}\n"
+    dest: "{{ control_plane_connectors_config }}"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+  notify:
+    - Restart mando-worker
+    - Restart mando-connectors
 
 # ---- VS Code tunnel token (optional): only if the controller has one ----
 - name: Check for the VS Code tunnel token on the controller
@@ -201,15 +213,13 @@
     - mando-worker.service
     - webhook-rx.service
     - nats-bridge.service
-    - slack-gateway.service
-    - telegram-gateway.service
+    - mando-connectors.service
   notify:
     - Reload systemd daemon (control-plane)
     - Restart mando-worker
     - Restart webhook-rx
     - Restart nats-bridge
-    - Restart slack-gateway
-    - Restart telegram-gateway
+    - Restart mando-connectors
 
 - name: Apply unit changes before enabling
   ansible.builtin.meta: flush_handlers
@@ -223,15 +233,6 @@
     - nats-bridge
     - mando-worker
     - webhook-rx
-
-- name: Enable and start slack-gateway when Slack is configured
-  ansible.builtin.systemd_service:
-    name: slack-gateway
-    enabled: "{{ control_plane_slack_enabled }}"
-    state: "{{ 'started' if control_plane_slack_enabled else 'stopped' }}"
-
-- name: Enable and start telegram-gateway when Telegram is configured
-  ansible.builtin.systemd_service:
-    name: telegram-gateway
-    enabled: "{{ control_plane_telegram_enabled }}"
-    state: "{{ 'started' if control_plane_telegram_enabled else 'stopped' }}"
+    # mando-connectors is always-on: it runs whichever connectors are enabled+configured and idles if
+    # none. Enabling/disabling a connector is a connectors.json edit (+ a restart), not a unit toggle.
+    - mando-connectors
