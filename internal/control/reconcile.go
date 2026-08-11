@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/chelodo/mandobox/internal/reconcile"
-	"github.com/chelodo/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/reconcile"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"

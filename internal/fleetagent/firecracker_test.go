@@ -3,7 +3,7 @@ package fleetagent
 import (
 	"testing"
 
-	"github.com/chelodo/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 )
 
 func TestDeriveMAC(t *testing.T) {

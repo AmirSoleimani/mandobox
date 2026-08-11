@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/chelodo/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 	commonpb "go.temporal.io/api/common/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"

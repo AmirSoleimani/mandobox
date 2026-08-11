@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/chelodo/mandobox/internal/control"
-	"github.com/chelodo/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/control"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 )

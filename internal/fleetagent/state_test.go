@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/chelodo/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 )
 
 func TestStateStoreRoundTrip(t *testing.T) {

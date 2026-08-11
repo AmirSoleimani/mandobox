@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/chelodo/mandobox/internal/control"
+	"github.com/AmirSoleimani/mandobox/internal/control"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/sdk/testsuite"

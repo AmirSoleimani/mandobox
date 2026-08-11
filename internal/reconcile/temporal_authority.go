@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/chelodo/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 	"go.temporal.io/api/workflowservice/v1"
 )
 

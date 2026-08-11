@@ -13,7 +13,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/chelodo/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 	"github.com/nats-io/nats.go"
 )
 

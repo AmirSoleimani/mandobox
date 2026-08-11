@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/chelodo/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 )
 
 func TestWorkspaceEnsureReuse(t *testing.T) {

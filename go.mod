@@ -1,4 +1,4 @@
-module github.com/chelodo/mandobox
+module github.com/AmirSoleimani/mandobox
 
 go 1.25.4
 

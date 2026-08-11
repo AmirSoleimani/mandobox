@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chelodo/mandobox/internal/connectors"
-	"github.com/chelodo/mandobox/internal/control"
-	"github.com/chelodo/mandobox/internal/reconcile"
-	"github.com/chelodo/mandobox/internal/supervisor"
+	"github.com/AmirSoleimani/mandobox/internal/connectors"
+	"github.com/AmirSoleimani/mandobox/internal/control"
+	"github.com/AmirSoleimani/mandobox/internal/reconcile"
+	"github.com/AmirSoleimani/mandobox/internal/supervisor"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 )

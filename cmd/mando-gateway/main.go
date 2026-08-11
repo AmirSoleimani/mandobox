@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chelodo/mandobox/internal/gateway"
+	"github.com/AmirSoleimani/mandobox/internal/gateway"
 )
 
 func main() {

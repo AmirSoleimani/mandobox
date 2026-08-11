@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chelodo/mandobox/internal/control"
-	"github.com/chelodo/mandobox/internal/session"
+	"github.com/AmirSoleimani/mandobox/internal/control"
+	"github.com/AmirSoleimani/mandobox/internal/session"
 	"go.temporal.io/sdk/client"
 )
 

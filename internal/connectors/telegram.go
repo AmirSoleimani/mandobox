@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chelodo/mandobox/internal/control"
+	"github.com/AmirSoleimani/mandobox/internal/control"
 )
 
 const telegramAPI = "https://api.telegram.org/bot"
@@ -139,7 +139,7 @@ func (t *telegramConnector) command(ctx context.Context, d *Dispatcher, chatID s
 // welcome / usage text. Sent as plain text (no parse_mode), so Telegram auto-links the /commands.
 const telegramWelcome = "👋 I'm mandobox. Tell me a repo and what to do, and I'll spin up a machine and open a PR:\n\n" +
 	"/mando <owner/repo> <what you want done>\n" +
-	"e.g. /mando chelodo/hello-gents add a /healthz endpoint\n\n" +
+	"e.g. /mando your-org/your-repo add a /healthz endpoint\n\n" +
 	"• Put --cheap right after /mando to use a cheaper model.\n" +
 	"• Once a task is running, just send messages here to steer it.\n" +
 	"• /mando attach <pr-or-session> and /mando detach connect this chat to a VS Code session."

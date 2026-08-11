@@ -13,7 +13,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/chelodo/mandobox/internal/connectors"
+	"github.com/AmirSoleimani/mandobox/internal/connectors"
 	"go.temporal.io/sdk/client"
 )
 
