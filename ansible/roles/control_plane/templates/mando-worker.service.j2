@@ -9,6 +9,7 @@ Requires=temporal.service
 Type=simple
 EnvironmentFile={{ control_plane_conf_dir }}/control-plane.env
 EnvironmentFile=-{{ control_plane_conf_dir }}/slack.env
+EnvironmentFile=-{{ control_plane_conf_dir }}/telegram.env
 ExecStart=/usr/local/bin/mando-worker
 Restart=on-failure
 RestartSec=3
