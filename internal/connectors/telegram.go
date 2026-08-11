@@ -84,13 +84,27 @@ func (t *telegramConnector) handle(ctx context.Context, d *Dispatcher, u tgUpdat
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	if rest, ok := parseMandoCommand(text, t.botUsername); ok {
-		t.reply(cctx, chatID, t.command(cctx, d, chatID, m.From.ID, rest))
-		return
+	if cmd, rest, ok := parseSlash(text, t.botUsername); ok {
+		switch strings.ToLower(cmd) {
+		case "mando":
+			t.reply(cctx, chatID, t.command(cctx, d, chatID, m.From.ID, rest))
+			return
+		case "start", "help":
+			// Telegram sends /start when a user first opens the bot; without a reply it looks dead.
+			t.reply(cctx, chatID, telegramWelcome)
+			return
+		}
+		// Any other slash command falls through: it steers a running session if there is one,
+		// otherwise it's ignored (or nudged, in a 1:1 chat) below.
 	}
 	// A plain message → steer the chat's running session.
 	wfID, err := d.FindByConversation(cctx, "telegram:"+chatID)
 	if err != nil {
+		// No running session for this chat. In a 1:1 chat, nudge with the usage rather than
+		// staying silent; in a group, stay quiet to avoid noise.
+		if m.Chat.Type == "private" {
+			t.reply(cctx, chatID, telegramNoSession)
+		}
 		return
 	}
 	if err := d.Signal(cctx, wfID, control.SignalUserMessage, control.UserMessageSignal{Text: text}); err != nil {
@@ -122,21 +136,30 @@ func (t *telegramConnector) command(ctx context.Context, d *Dispatcher, chatID s
 
 // ---- pure parsing helpers (unit-tested in parse_test.go) ----
 
-// parseMandoCommand reports whether text is a /mando command (optionally /mando@botname) and returns
-// the remainder after the command word.
-func parseMandoCommand(text, botUsername string) (rest string, ok bool) {
+// welcome / usage text. Sent as plain text (no parse_mode), so Telegram auto-links the /commands.
+const telegramWelcome = "👋 I'm mandobox. Tell me a repo and what to do, and I'll spin up a machine and open a PR:\n\n" +
+	"/mando <owner/repo> <what you want done>\n" +
+	"e.g. /mando acme/hello-gents add a /healthz endpoint\n\n" +
+	"• Put --cheap right after /mando to use a cheaper model.\n" +
+	"• Once a task is running, just send messages here to steer it.\n" +
+	"• /mando attach <pr-or-session> and /mando detach connect this chat to a VS Code session."
+
+const telegramNoSession = "No task is running in this chat yet. Start one with:\n" +
+	"/mando <owner/repo> <what you want done>"
+
+// parseSlash splits a leading /command (optionally /command@botname addressed to us) from text,
+// returning the command word (without the slash) and the remainder after it. ok is false when text
+// isn't a slash command, or is a /command@otherbot addressed to a different bot in a group.
+func parseSlash(text, botUsername string) (cmd, rest string, ok bool) {
 	if !strings.HasPrefix(text, "/") {
-		return "", false
+		return "", "", false
 	}
 	word, tail, _ := strings.Cut(text[1:], " ")
 	name, at, hasAt := strings.Cut(word, "@")
-	if name != "mando" {
-		return "", false
-	}
 	if hasAt && botUsername != "" && !strings.EqualFold(at, botUsername) {
-		return "", false // addressed to a different bot in a group
+		return "", "", false // addressed to a different bot in a group
 	}
-	return strings.TrimSpace(tail), true
+	return name, strings.TrimSpace(tail), true
 }
 
 // parseDispatch splits a /mando body into repo + prompt, honouring a leading --cheap flag.
@@ -167,7 +190,8 @@ type tgMessage struct {
 		IsBot bool  `json:"is_bot"`
 	} `json:"from"`
 	Chat struct {
-		ID int64 `json:"id"`
+		ID   int64  `json:"id"`
+		Type string `json:"type"` // "private", "group", "supergroup", … — used to avoid nudging in groups
 	} `json:"chat"`
 }
 

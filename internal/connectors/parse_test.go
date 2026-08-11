@@ -2,24 +2,28 @@ package connectors
 
 import "testing"
 
-func TestParseMandoCommand(t *testing.T) {
+func TestParseSlash(t *testing.T) {
 	cases := []struct {
-		text, bot, wantRest string
-		wantOK              bool
+		text, bot, wantCmd, wantRest string
+		wantOK                       bool
 	}{
-		{"/mando owner/repo do it", "mybot", "owner/repo do it", true},
-		{"/mando", "mybot", "", true},
-		{"/mando@mybot owner/repo x", "mybot", "owner/repo x", true},
-		{"/mando@MyBot owner/repo x", "mybot", "owner/repo x", true}, // case-insensitive @mention
-		{"/mando@otherbot x", "mybot", "", false},                    // addressed to a different bot
-		{"/start", "mybot", "", false},
-		{"just a chat message", "mybot", "", false},
-		{"/mandolin not a command", "mybot", "", false},
+		{"/mando owner/repo do it", "mybot", "mando", "owner/repo do it", true},
+		{"/mando", "mybot", "mando", "", true},
+		{"/mando@mybot owner/repo x", "mybot", "mando", "owner/repo x", true},
+		{"/mando@MyBot owner/repo x", "mybot", "mando", "owner/repo x", true}, // case-insensitive @mention
+		{"/mando@otherbot x", "mybot", "", "", false},                        // addressed to a different bot
+		{"/start", "mybot", "start", "", true},
+		{"/help", "mybot", "help", "", true},
+		{"/start@mybot", "mybot", "start", "", true},
+		{"/help@otherbot", "mybot", "", "", false}, // addressed to a different bot
+		{"/foo bar baz", "mybot", "foo", "bar baz", true},
+		{"just a chat message", "mybot", "", "", false},
 	}
 	for _, c := range cases {
-		rest, ok := parseMandoCommand(c.text, c.bot)
-		if ok != c.wantOK || rest != c.wantRest {
-			t.Errorf("parseMandoCommand(%q,%q) = (%q,%v), want (%q,%v)", c.text, c.bot, rest, ok, c.wantRest, c.wantOK)
+		cmd, rest, ok := parseSlash(c.text, c.bot)
+		if ok != c.wantOK || cmd != c.wantCmd || rest != c.wantRest {
+			t.Errorf("parseSlash(%q,%q) = (%q,%q,%v), want (%q,%q,%v)",
+				c.text, c.bot, cmd, rest, ok, c.wantCmd, c.wantRest, c.wantOK)
 		}
 	}
 }
