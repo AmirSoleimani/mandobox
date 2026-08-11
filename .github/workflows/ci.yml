@@ -1,0 +1,41 @@
+name: CI
+
+# Vet + tests for BOTH Go modules (root and dashboard/) plus a linux/amd64 build,
+# on every push to main and every pull request. This is the "`make check` green is
+# the bar for done" gate that CONTRIBUTING.md and AGENTS.md promise.
+#
+# The unit tests isolate Firecracker/jailer/KVM behind interfaces (see AGENTS.md), so
+# they run on a stock Linux runner with no /dev/kvm.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # Tracks the version + patched toolchain pinned in go.mod (go1.25.12).
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            dashboard/go.sum
+
+      - name: Vet + tests (root + dashboard modules)
+        run: make check
+
+      - name: Cross-compile linux/amd64 binaries
+        run: make dist
