@@ -18,7 +18,7 @@ security boundary sharp.
 
 The unit of work is one **session**, identified by a ULID (`session_id`, e.g. `s_RX94WFYM…`). That one
 identifier is threaded, unchanged, through everything: the Temporal workflow ID, the NATS subject
-prefix, the git branch, the workspace volume filename, the jailer chroot, and the Slack thread. If you
+prefix, the git branch, the workspace volume filename, the jailer chroot, and the chat thread. If you
 know a session's ID, you can find every trace of it.
 
 ## Two trust zones
@@ -36,31 +36,35 @@ egress anywhere off the allowlist.
 
 ## Component map
 
-Every process runs on the one host. The `cmd/` binaries:
+Every process runs on the one host (built from `cmd/` unless noted; Temporal, PostgreSQL, LiteLLM, and
+NATS are third-party):
 
 | Process | Responsibility |
 |---|---|
 | **Temporal + PostgreSQL** | Durable workflow engine and its datastore — the source of truth for every session's state. |
-| **mando-worker** | Runs the durable workflows (`PRWorkflow`, scheduled `ReconcileWorkflow`) and all their activities. |
-| **mando-agent** | The host-side VM API (mTLS): launches and destroys Firecracker micro-VMs on request. |
+| **mando-worker** | Runs the durable workflows (`PRWorkflow`, scheduled `ReconcileWorkflow`) and all their activities, including posting session updates to each enabled chat connector. |
+| **mando-connectors** | The connector host: runs the inbound loop (Socket Mode / long-poll) of every *enabled* chat connector — Slack, Telegram — in one process. Turns `/mando` commands into workflow dispatches and chat replies into signals. |
+| **mando-agent** | The host-side VM API (mTLS): creates a session's workspace volume, then launches and destroys its Firecracker micro-VM on request. |
 | **mando-gateway** | The single egress proxy — splits LLM traffic from allowlisted git/registry traffic and injects the real provider key host-side. |
 | **LiteLLM** | Model router behind the gateway: maps friendly model names to providers (Anthropic; optionally OpenAI). |
 | **NATS + nats-bridge** | The per-session control bus; `nats-bridge` archives the event/log stream to disk. |
-| **slack-gateway** | The Slack connector (Socket Mode) — turns `/mando` commands into workflow dispatches. |
 | **webhook-rx** | Verifies GitHub webhook HMACs and turns PR/review events into workflow signals. |
-| **mando-dashboard** | Local management + observability UI (localhost, reached over an SSH tunnel). |
+| **mando-dashboard** | Local management + observability UI (localhost, over an SSH tunnel). A separate Go module (`dashboard/`). |
+| **mando-dispatch** | A one-shot CLI that starts a single `PRWorkflow` — dispatch without a chat connector or the dashboard. |
 | **mando-natsauth** | Generates the decentralized NATS auth material (operator/account) and per-session credentials. |
 | **reaper** (systemd timer) | Host-level backstop that kills micro-VMs past their TTL or with a stale heartbeat. |
 | **fc-supervisor** | PID 1 *inside* each guest — reads MMDS, sets up the workspace, and runs the agent. |
 
-The internal packages mirror this: `control` (workflows + activities), `fleetagent` (the Firecracker
-launcher), `gateway`, `natsauth`, `reconcile`, `session`, and `supervisor`.
+The internal packages mirror this: `control` (workflows + activities), `connectors` (the chat-connector
+registry + runtime), `fleetagent` (the Firecracker launcher), `gateway`, `natsauth`, `reconcile`,
+`session`, and `supervisor`.
 
 ## How it fits together
 
 ```mermaid
 flowchart TB
   slack["Slack (/mando)"]
+  telegram["Telegram (/mando)"]
   dash["Dashboard :8087 (SSH tunnel)"]
   gh["GitHub (App PRs + webhooks)"]
   provider["LLM provider: Anthropic (Claude), optionally OpenAI"]
@@ -68,7 +72,7 @@ flowchart TB
   subgraph host["Fleet host — single box (/dev/kvm)"]
     temporal["Temporal + Postgres"]
     worker["mando-worker: PRWorkflow + ReconcileWorkflow + activities"]
-    slackgw["slack-gateway (Socket Mode)"]
+    connectors["mando-connectors (Slack + Telegram inbound)"]
     webhookrx["webhook-rx (HMAC verify)"]
     natsbridge["nats-bridge (archiver)"]
     dashsvc["mando-dashboard"]
@@ -85,8 +89,9 @@ flowchart TB
     end
   end
 
-  slack --> slackgw
-  slackgw -->|"start / user_message"| temporal
+  slack -->|"/mando, replies"| connectors
+  telegram -->|"/mando, replies"| connectors
+  connectors -->|"start / user_message"| temporal
   dash -->|"dispatch / signal"| temporal
   gh -->|"webhooks"| webhookrx
   webhookrx -->|"signals"| temporal
@@ -105,27 +110,30 @@ flowchart TB
   litellm --> provider
   agentp -->|"HTTPS_PROXY (git/gh)"| gateway
   gateway -->|"allowlisted"| gh
-  worker -->|"App token, PR ops, post to thread"| gh
-  worker -->|"render thread"| slack
+  worker -->|"App token, PR ops"| gh
+  worker -->|"post updates"| slack
+  worker -->|"post updates"| telegram
   reaper -.->|"reap stale VMs"| vm
   worker -.->|"reconcile orphans"| fleetagent
 ```
 
 ## Life of a task
 
-1. **Dispatch** — a `/mando <repo> <prompt>` from Slack or a **New session** in the dashboard starts
-   a `PRWorkflow` in Temporal, keyed by a fresh `session_id`.
-2. **Prepare** — the workflow mints a short-lived, repo-scoped GitHub token, mints a per-session NATS
-   credential, and creates the workspace volume.
-3. **Launch** — an activity calls `mando-agent` over mTLS; `mando-agent` boots a Firecracker micro-VM
-   (via the jailer) from the content-addressed golden image, passing boot config through **MMDS**.
+1. **Dispatch** — `/mando <repo> <prompt>` from any enabled chat connector (Slack, Telegram), a **New
+   session** in the dashboard, or the `mando-dispatch` CLI starts a `PRWorkflow` in Temporal, keyed by a
+   fresh `session_id`.
+2. **Prepare** — the workflow mints a short-lived, repo-scoped GitHub token and a per-session NATS
+   credential (the `MintCredentials` activity).
+3. **Launch** — an activity calls `mando-agent` over mTLS; `mando-agent` creates the session's workspace
+   volume, then boots a Firecracker micro-VM (via the jailer) from the content-addressed golden image,
+   passing boot config through **MMDS**.
 4. **Boot** — inside the guest, `fc-supervisor` (PID 1) reads MMDS, mounts the workspace, clones the
    repo, and starts the agent (Claude Code by default).
 5. **Run** — the agent works. All its LLM calls go out through the gateway (which injects the real
    key); its git/`gh` calls go through the same gateway against an allowlist. Progress streams over the
    `agent.<session_id>.*` NATS subjects.
 6. **Open a PR** — the agent commits, pushes its branch, and opens a pull request. The workflow posts
-   the PR back to the Slack thread.
+   the PR back to the session's chat thread.
 7. **Review loop** — a review comment fires a GitHub webhook → `webhook-rx` verifies it → signals the
    workflow, which resumes the *same* session (workspace and agent transcript intact) to address the
    feedback.
@@ -150,20 +158,31 @@ image as a second harness (available, not yet verified end-to-end).
 ## Networking & egress
 
 Each VM gets its own point-to-point tap device on a `/30`, with an **nftables deny-by-default** policy.
-There is no shared bridge and no inbound path. A guest can talk to exactly two things, both through
-`mando-gateway`:
+There is no shared bridge and no inbound path. A guest's only route to the **outside network** is
+`mando-gateway` — two traffic classes:
 
-- **LLM traffic** — the agent's `ANTHROPIC_BASE_URL` points at the gateway, which forwards to LiteLLM
-  and on to the provider. The real provider key is injected host-side and never enters the guest.
+- **LLM traffic (default, API-key mode)** — the agent's `ANTHROPIC_BASE_URL` points at the gateway, which
+  forwards to LiteLLM and on to the provider. The real provider key is injected host-side and never
+  enters the guest.
 - **git / registry traffic** — the agent's `HTTPS_PROXY` points at the same gateway, which permits only
   an allowlist (GitHub and package registries).
 
-Guest-to-guest traffic is dropped. This is the property that lets untrusted code run safely.
+Guest-to-guest traffic is dropped — the property that lets untrusted code run safely. (The guest also
+reaches two *host-local* endpoints directly, not through the gateway: the DNS resolver and its
+per-session NATS bus, plus read-only MMDS — all on the trusted host, none on the internet.)
+
+**Subscription mode (single-user exception).** When the box runs on an operator's Claude *subscription*
+instead of an API key, the guest talks to `api.anthropic.com` **directly** (an allowlisted host) using
+the operator's OAuth token, delivered into the guest via MMDS — so in this mode `ANTHROPIC_BASE_URL` is
+unset and the token does live in the guest. That is the documented single-user trade-off
+([subscription-auth.md](subscription-auth.md)); the default API-key path keeps the key host-side.
 
 ## Secrets & credential tiers
 
-- **Tier 0 — never in a guest.** The Anthropic key, the GitHub App private key, the NATS operator seed.
-  These live on the host at `0600` and are used only host-side (e.g. key injection at the gateway).
+- **Tier 0 — never in a guest.** The Anthropic *API* key, the GitHub App private key, the NATS operator
+  seed. These live on the host at `0600` and are used only host-side (e.g. key injection at the gateway).
+  *(Exception: in subscription mode the operator's Claude OAuth token is delivered into the guest via
+  MMDS — the documented single-user trade-off.)*
 - **Tier 1 — per-session, delivered at boot via MMDS.** The repo-scoped GitHub installation token and
   the session's NATS credential — scoped to `agent.<session_id>.>` so one session can never touch
   another's subjects.
@@ -175,9 +194,9 @@ Guest-to-guest traffic is dropped. This is the property that lets untrusted code
 
 The NATS bus carries `event`, `log`, and `heartbeat` streams per session. `nats-bridge` archives them
 so a session's history survives its VM. The **dashboard** tails that stream over SSE — a live "connect
-to agent" console — and can send a `user_message` signal back into a running session. The **Slack
-thread** mirrors the same lifecycle, and an operator can **attach a browser VS Code** into a live VM
-for hands-on inspection.
+to agent" console — and can send a `user_message` signal back into a running session. The **chat thread** (Slack or Telegram)
+mirrors the same lifecycle, and an operator can **attach a browser VS Code** into a live VM for
+hands-on inspection.
 
 ## Orphan reaping & failure recovery
 
@@ -193,29 +212,34 @@ re-attach the workspace."
 
 ## Adding a chat connector
 
-Slack is one **chat connector** — the conversation surface a task is dispatched from and reports back
-to. GitHub is different: it's the *substrate* (every task ends in a PR), not a swappable chat channel.
-Adding another chat connector (Telegram, WhatsApp, Discord, …) is three small, independent pieces —
-the workflow itself never changes:
+Slack and Telegram are **chat connectors** — the conversation surfaces a task is dispatched from and
+reports back to. (GitHub is different: it's the *substrate* — every task ends in a PR — not a swappable
+chat channel.) A connector is a single type implementing the `Connector` interface
+(`internal/connectors`): its inbound half (`Serve`) and its outbound half (`Notifier`) together.
 
-1. **Outbound** — implement the `Notifier` interface (`internal/control/notify.go`): `Post`/`Update`,
-   rendering the canonical Markdown into your platform's format (mirror the Telegram renderer in
-   `render.go`). Register it by assigning `Activities.Notifiers[kind]` in the worker. The workflow only
-   ever calls the generic `PostMessage`/`UpdateMessage` activities against a `Conversation{Kind, Channel,
-   Thread}`, so it routes to your connector automatically by `Kind`.
-2. **Inbound** — write a small translator (mirror `cmd/slack-gateway`): receive the platform's events
-   and turn them into the same two generic Temporal calls every dispatcher uses —
-   `ExecuteWorkflow(PRWorkflow, WorkflowInput{Conversation: {Kind, Channel}})` to start, and
-   `SignalWorkflow(SignalUserMessage, …)` to steer. Route a reply back to its workflow via a search
-   attribute (as `slack-gateway` uses `slack_thread`).
-3. **Config** — surface its secrets/setup on the dashboard's Connectors page.
+Adding one (WhatsApp, Discord, …) is one type in that package plus a `Registry()` entry — the workflow
+never changes:
 
-The workflow stays fully connector-agnostic — routing, delivery, **and** formatting. It holds a
-`Conversation` (not a Slack channel), routes replies by a namespaced `conversation` search attribute,
-and emits canonical chat markup in **Slack's mrkdwn dialect** (`*bold*`, `<url|label>`, `` `code` ``,
-`:emoji:`) as the lingua franca. The Slack notifier sends it as-is (so Slack output is unchanged); every
-other notifier translates it — the Telegram notifier via `canonicalToTelegramHTML`
-(`internal/control/render.go`). `telegramNotifier` is a working second connector proving the seam.
+1. **Implement `Connector`** — `Kind()`, `Configured()` (are its credentials set?),
+   `Serve(ctx, *Dispatcher)` (the inbound receive loop — Socket Mode, long-poll, or webhook — which
+   starts and steers workflows through the shared `Dispatcher`), and `Notifier()` (the outbound half that
+   renders + posts). Mirror `internal/connectors/slack.go` or `telegram.go`.
+2. **Register it** — add it to `Registry()`. That's the only wiring: the `mando-connectors` host runs the
+   `Serve` loop of every *enabled* connector, and `mando-worker` registers the `Notifier` of every enabled
+   connector — both iterate the same `Registry()`. No worker edit, no separate binary.
+3. **Surface it** — add a card and its secret to the dashboard's Connectors page.
+
+**Enable/disable is runtime.** `connectors.json` (`{"slack":{"enabled":true},…}`) governs which connectors
+run; both the host and the worker read it, and the dashboard's Connectors page has a per-connector toggle
+that writes it and restarts both. Absent from the file = on when configured. Configuring a connector's
+secret and turning it on/off needs no redeploy.
+
+**Routing and formatting stay connector-agnostic.** The workflow holds a `Conversation{Kind, Channel,
+Thread}`, not a Slack channel; replies route by a namespaced `conversation` search attribute
+(`"<kind>:<thread>"`); and it emits canonical chat markup in **Slack's mrkdwn dialect** (`*bold*`,
+`<url|label>`, `:emoji:`) as the lingua franca. The Slack notifier sends it as-is (so Slack output is
+unchanged); every other notifier translates it — the Telegram notifier via `canonicalToTelegramHTML`
+(`internal/control/render.go`).
 
 ## Configuration, deployment & further reading
 
