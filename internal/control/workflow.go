@@ -22,6 +22,7 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 
 	st := &State{
 		SessionID:  in.SessionID,
+		Title:      taskTitle(in.Prompt), // deterministic (pure fn of the input) → recomputed each replay
 		Repo:       in.Repo,
 		BaseBranch: in.BaseBranch,
 		HeadBranch: "agent/" + in.SessionID,
@@ -477,7 +478,7 @@ func postRoot(ctx workflow.Context, st *State, in WorkflowInput) {
 	var r NotifyResult
 	if err := workflow.ExecuteActivity(slackCtx(ctx), a.PostMessage,
 		PostMessageParams{Conversation: conv, Text: text}).Get(ctx, &r); err == nil && r.Thread != "" {
-		st.Conversation = Conversation{Kind: conv.resolvedKind(), Channel: r.Channel, Thread: r.Thread}
+		st.Conversation = Conversation{Kind: conv.resolvedKind(), Channel: r.Channel, Thread: r.Thread, Flat: conv.Flat}
 		// So any connector's inbound translator can route thread replies back to this workflow, keyed by
 		// "<kind>:<thread>" (namespaced so different connectors' thread ids can't collide). No connector
 		// name appears here — the routing is connector-agnostic.
@@ -499,12 +500,70 @@ func notify(ctx workflow.Context, st *State, text string) {
 	if st.Conversation.Thread == "" {
 		return
 	}
+	if tag := sessionTag(st); tag != "" {
+		text = tag + "\n" + text // flat-chat connectors only; empty (no-op) for Slack
+	}
 	var a *Activities
 	var r NotifyResult
 	if err := workflow.ExecuteActivity(slackCtx(ctx), a.PostMessage,
 		PostMessageParams{Conversation: st.Conversation, Text: text}).Get(ctx, &r); err == nil {
 		recordChatMessage(ctx, st, r.MessageID)
 	}
+}
+
+// shortSID abbreviates a session id (s_<ULID>) to a greppable prefix — enough to tell interleaved
+// sessions apart at a glance, and a prefix of the full id shown in the root "Task dispatched" message.
+func shortSID(s string) string {
+	if len(s) > 8 {
+		return s[:8]
+	}
+	return s
+}
+
+// taskTitle renders a short, single-line, emphasis-safe title from the task prompt for the session tag.
+// It keeps the first line only and strips mrkdwn emphasis markers so the italic-wrapped title can't break
+// the surrounding markup. Pure function of the prompt → safe to recompute on every workflow replay.
+func taskTitle(prompt string) string {
+	t := prompt
+	if i := strings.IndexAny(t, "\r\n"); i >= 0 {
+		t = t[:i]
+	}
+	t = strings.Map(func(r rune) rune {
+		switch r {
+		case '`', '*', '_', '~':
+			return -1
+		}
+		return r
+	}, t)
+	return truncate(strings.TrimSpace(t), 60)
+}
+
+// sessionTag is the compact "which session is this?" prefix prepended to a flat-chat connector's
+// follow-up messages (Telegram), where several sessions interleave in one chat. Empty for threaded
+// connectors (Slack) — their threads already group a session's messages, so Slack output stays
+// byte-identical. Canonical mrkdwn (sid in `code`, title in _italic_); the connector translates it.
+func sessionTag(st *State) string {
+	if !st.Conversation.Flat {
+		return ""
+	}
+	tag := "`" + shortSID(st.SessionID) + "`"
+	if st.Title != "" {
+		tag += " _" + st.Title + "_"
+	}
+	return tag
+}
+
+// sessionTagPlain is sessionTag as plain text, for surfaces delivered verbatim — a photo caption isn't
+// run through the mrkdwn translator (Telegram caption / Slack initial_comment). Empty for threaded chats.
+func sessionTagPlain(st *State) string {
+	if !st.Conversation.Flat {
+		return ""
+	}
+	t := shortSID(st.SessionID)
+	if st.Title != "" {
+		t += " · " + st.Title
+	}
+	return t
 }
 
 // maxChatMsgIDs caps the per-session reply-routing token list: a reviewer replies to a recent message,
@@ -545,6 +604,9 @@ func recordChatMessage(ctx workflow.Context, st *State, msgID string) {
 func postScreenshot(ctx workflow.Context, st *State, png []byte, caption string) {
 	if st.Conversation.Thread == "" || len(png) == 0 {
 		return
+	}
+	if tag := sessionTagPlain(st); tag != "" {
+		caption = tag + "\n" + caption // so an interleaved screenshot still shows which session it's from
 	}
 	var a *Activities
 	var msgID string

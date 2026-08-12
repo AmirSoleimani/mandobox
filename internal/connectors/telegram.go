@@ -138,7 +138,9 @@ func (t *telegramConnector) command(ctx context.Context, d *Dispatcher, chatID s
 	if !ok {
 		return "usage: /mando [--cheap] <owner/repo> <prompt>"
 	}
-	sid, err := d.Dispatch(ctx, control.Conversation{Kind: "telegram", Channel: chatID}, repo, prompt, cheap)
+	// Flat: Telegram has no native threading — several sessions interleave in one chat, so the workflow
+	// tags this session's follow-up messages with a compact "which session" prefix (see sessionTag).
+	sid, err := d.Dispatch(ctx, control.Conversation{Kind: "telegram", Channel: chatID, Flat: true}, repo, prompt, cheap)
 	if err != nil {
 		return "failed to dispatch: " + err.Error()
 	}
