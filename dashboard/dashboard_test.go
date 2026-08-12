@@ -198,6 +198,7 @@ func TestPreambleStore(t *testing.T) {
 	dir := t.TempDir()
 	auto := filepath.Join(dir, "preamble-autonomous.md")
 	collab := filepath.Join(dir, "preamble-collaborate.md")
+	plan := filepath.Join(dir, "preamble-plan.md")
 	// worker-materialized defaults
 	if err := os.WriteFile(auto+".default", []byte("BUILTIN-AUTO"), 0o644); err != nil {
 		t.Fatal(err)
@@ -205,12 +206,26 @@ func TestPreambleStore(t *testing.T) {
 	if err := os.WriteFile(collab+".default", []byte("BUILTIN-COLLAB"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ps := newPreambleStore(auto, collab)
+	if err := os.WriteFile(plan+".default", []byte("BUILTIN-PLAN"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ps := newPreambleStore(auto, collab, plan)
 
 	// No override → shows default, has_override=false.
 	v := ps.view()
-	if len(v) != 2 || v[0].HasOverride || v[0].Default != "BUILTIN-AUTO" {
+	if len(v) != 3 || v[0].HasOverride || v[0].Default != "BUILTIN-AUTO" {
 		t.Fatalf("initial view wrong: %+v", v[0])
+	}
+	if v[2].Name != "plan" || v[2].Default != "BUILTIN-PLAN" {
+		t.Fatalf("plan preamble view wrong: %+v", v[2])
+	}
+
+	// The plan override is writable/clearable like the others.
+	if err := ps.write("plan", "PLAN-CUSTOM"); err != nil {
+		t.Fatal(err)
+	}
+	if !ps.view()[2].HasOverride || ps.view()[2].Override != "PLAN-CUSTOM" {
+		t.Fatalf("plan override not applied: %+v", ps.view()[2])
 	}
 
 	// Write an override → active.

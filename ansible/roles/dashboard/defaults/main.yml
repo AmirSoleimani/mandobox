@@ -36,6 +36,7 @@ dashboard_instructions_path: /etc/fleet/agent-instructions.md
 # built-in defaults to <path>.default for the dashboard). Must match the control_plane paths.
 dashboard_preamble_autonomous: /etc/fleet/preamble-autonomous.md
 dashboard_preamble_collaborate: /etc/fleet/preamble-collaborate.md
+dashboard_preamble_plan: /etc/fleet/preamble-plan.md
 
 # Archived guest agent-activity logs (nats-bridge writes <session>.log.jsonl here).
 dashboard_log_dir: /var/lib/fleet/logs

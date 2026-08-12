@@ -63,6 +63,7 @@ func main() {
 	// so the dashboard can show them and offer reset; the override files themselves start absent.
 	preambleAutoPath := env("MANDO_PREAMBLE_AUTONOMOUS", "/etc/fleet/preamble-autonomous.md")
 	preambleCollabPath := env("MANDO_PREAMBLE_COLLABORATE", "/etc/fleet/preamble-collaborate.md")
+	preamblePlanPath := env("MANDO_PREAMBLE_PLAN", "/etc/fleet/preamble-plan.md")
 	// Agent auth mode (dashboard toggle) + the Claude subscription token — docs/subscription-auth.md.
 	authModePath := env("MANDO_AGENT_AUTH", "/etc/fleet/agent-auth")
 	oauthTokenPath := env("MANDO_CLAUDE_OAUTH_TOKEN", "/etc/fleet/claude-oauth-token")
@@ -76,6 +77,7 @@ func main() {
 	natsAccountPub := readTrimFile(env("MANDO_NATS_ACCOUNT_PUBKEY", "/etc/fleet/nats-account.pub"))
 	writePreambleDefault(preambleAutoPath+".default", supervisor.DefaultAutonomousPreamble)
 	writePreambleDefault(preambleCollabPath+".default", supervisor.DefaultCollaboratePreamble)
+	writePreambleDefault(preamblePlanPath+".default", supervisor.DefaultPlanPreamble)
 	if cfg.appID == "" || cfg.appKeyPath == "" {
 		log.Fatal("GITHUB_APP_ID and GITHUB_APP_KEY are required")
 	}
@@ -112,6 +114,7 @@ func main() {
 		InstructionsPath:        instructionsPath,
 		PreambleAutonomousPath:  preambleAutoPath,
 		PreambleCollaboratePath: preambleCollabPath,
+		PreamblePlanPath:        preamblePlanPath,
 		AuthModePath:            authModePath,
 		OAuthTokenPath:          oauthTokenPath,
 		ProviderConfigPath:      providerConfigPath,

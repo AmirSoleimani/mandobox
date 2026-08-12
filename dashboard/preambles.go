@@ -18,7 +18,7 @@ import (
 // commit/push/PR; dropping it can silently break pushing), which the UI warns about.
 
 type preambleDef struct {
-	Name  string // "autonomous" | "collaborate"
+	Name  string // "autonomous" | "collaborate" | "plan"
 	Label string
 	Desc  string
 	Path  string // override file; the built-in default is at Path + ".default"
@@ -28,7 +28,7 @@ type preambleStore struct {
 	defs []preambleDef
 }
 
-func newPreambleStore(autonomousPath, collaboratePath string) *preambleStore {
+func newPreambleStore(autonomousPath, collaboratePath, planPath string) *preambleStore {
 	return &preambleStore{defs: []preambleDef{
 		{
 			Name: "autonomous", Label: "Autonomous preamble", Path: autonomousPath,
@@ -37,6 +37,10 @@ func newPreambleStore(autonomousPath, collaboratePath string) *preambleStore {
 		{
 			Name: "collaborate", Label: "Collaborate preamble", Path: collaboratePath,
 			Desc: "Resume/review turn: the agent replies to the reviewer as a senior peer, answering questions and making changes, pushing back when warranted.",
+		},
+		{
+			Name: "plan", Label: "Plan preamble", Path: planPath,
+			Desc: "Plan-mode turn (/mando --plan): the agent explores the repo and writes a plan to review — no code changes — then waits. It must keep writing the plan to .mando/needs-input.md and not run git/gh.",
 		},
 	}}
 }

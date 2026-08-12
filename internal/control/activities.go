@@ -48,6 +48,7 @@ type Activities struct {
 	// missing → the guest uses its built-in default preamble. Operator-only (not repo-influenced).
 	PreambleAutonomousPath  string
 	PreambleCollaboratePath string
+	PreamblePlanPath        string
 	// Agent auth mode (dashboard-managed, docs/subscription-auth.md). AuthModePath holds "subscription"
 	// or "api_key"; OAuthTokenPath holds the Claude subscription token (Tier-0). Read per launch; only
 	// injected when the mode is "subscription". Absent/empty → the default gateway + API-key path.
@@ -199,6 +200,7 @@ func (a *Activities) LaunchVM(ctx context.Context, p LaunchParams) (LaunchResult
 	// edits take effect on the next launch. Absent/empty → the guest keeps its built-in preamble.
 	p.PreambleAutonomous = readTrimmedFile(a.PreambleAutonomousPath)
 	p.PreambleCollaborate = readTrimmedFile(a.PreambleCollaboratePath)
+	p.PreamblePlan = readTrimmedFile(a.PreamblePlanPath)
 	// Resolve the box-wide active provider (dashboard-managed). It governs the agent harness, model,
 	// and auth uniformly — subscription runs on the OAuth token direct to Anthropic; API-key providers
 	// go through the gateway. Helper calls follow the same provider (ClassifyIntent / commitMsg), so

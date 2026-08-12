@@ -66,6 +66,7 @@ control_plane_instructions_path: /etc/fleet/agent-instructions.md
 # <path>.default for the dashboard). Absent/empty → the guest uses its built-in preamble.
 control_plane_preamble_autonomous: /etc/fleet/preamble-autonomous.md
 control_plane_preamble_collaborate: /etc/fleet/preamble-collaborate.md
+control_plane_preamble_plan: /etc/fleet/preamble-plan.md
 
 # Endpoints — all localhost / host-anchor.
 control_plane_temporal_address: "127.0.0.1:7233"

@@ -37,10 +37,12 @@ type BootConfig struct {
 type AgentConfig struct {
 	Harness      string `json:"harness,omitempty"`
 	Instructions string `json:"instructions,omitempty"`
-	// PreambleAutonomous / PreambleCollaborate override the built-in task preambles (the base agent
-	// system prompts) when the operator sets them box-side. Empty → the built-in default is used.
+	// PreambleAutonomous / PreambleCollaborate / PreamblePlan override the built-in task preambles (the
+	// base agent system prompts) when the operator sets them box-side. Empty → the built-in default is
+	// used. PreamblePlan is the plan-mode preamble (explore + write a plan, don't build).
 	PreambleAutonomous  string `json:"preamble_autonomous,omitempty"`
 	PreambleCollaborate string `json:"preamble_collaborate,omitempty"`
+	PreamblePlan        string `json:"preamble_plan,omitempty"`
 	// Auth selects how the agent reaches the LLM. "" / "api_key" (default) → via the host gateway on a
 	// per-session token; the real key stays host-side. "subscription" → Claude Code authenticates on
 	// the operator's Claude plan with OAuthToken, talking to Anthropic directly (single-user only; the
