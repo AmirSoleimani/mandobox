@@ -237,8 +237,8 @@ func (s *Supervisor) resumeSpec(instructions, queued []string) AgentSpec {
 // otherwise it is a push to the existing branch.
 func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool, turnStart time.Time) error {
 	tokens := res.Usage.InputTokens + res.Usage.OutputTokens
-	// The agent's final visual-verification screenshot (if any), to share in the chat thread. Only
-	// attached to a code-changing outcome below — a no-op turn doesn't carry one.
+	// The screenshot the agent chose to share this turn (if any), attached to whichever outcome we
+	// publish below — including a no-op turn, since "show me a screenshot" is a legitimate no-change turn.
 	shot := s.harvestScreenshot(turnStart)
 
 	// Look at what changed before committing: a clean tree is the no-op turn, and the diff is what
@@ -253,7 +253,7 @@ func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool, 
 		// conversation, not a bare "no changes".
 		s.deps.Log.Info("agent produced no changes")
 		return s.deps.Bus.Event(Event{Type: EventPushDone, Stage: "no_changes",
-			Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens})
+			Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens, Screenshot: shot})
 	}
 
 	sha, _, err := s.git.Commit(ctx, s.commitMessageFor(ctx, res, summary, patch))
@@ -551,11 +551,13 @@ const visualCheck = "If your change has a visible effect in a browser (UI, styli
 	"single component or Storybook story over booting the whole app when you can — it is faster and more " +
 	"reliable. If you genuinely cannot get a meaningful render (it needs a backend, secrets, seed data, " +
 	"or a login), say so plainly in your summary and move on — never block the change on it. These " +
-	"verification captures are for YOU and are NOT shared with the reviewer by default — a screenshot on " +
-	"every change is noise. Share one ONLY when the reviewer asks to see it, or when the visual result " +
-	"is genuinely worth showing them: to share, save that current screenshot as `.mando/share.png` " +
-	"(overwrite it so it always reflects this turn's result). Keep the capture directory out of the " +
-	"commit (put .mando/ in .gitignore)."
+	"verification captures are for YOU and are NOT shown to the reviewer by default — a screenshot on " +
+	"every change is noise. But when the reviewer ASKS to see a screenshot, or a visual result is " +
+	"genuinely worth showing them, you SHARE one by capturing it to the exact path `.mando/share.png` — " +
+	"run `mando-shot <url> --out .mando/share.png`. That one file is delivered into the reviewer's chat " +
+	"as an actual image; a written description is NOT a substitute, so when they ask to see something, " +
+	"capture it there rather than only describing it. It reflects THIS turn, so re-capture it after each " +
+	"change they want to see. Keep the capture directory out of the commit (put .mando/ in .gitignore)."
 
 // DefaultAutonomousPreamble / DefaultCollaboratePreamble expose the built-in preambles so the worker
 // can materialize them to disk for the dashboard (which shows them as the editable default / reset
