@@ -8,9 +8,17 @@ import "github.com/AmirSoleimani/mandobox/internal/supervisor"
 // guest gets a per-session LLM auth token routed through the egress gateway.
 func buildMMDS(p LaunchParams) map[string]any {
 	task := map[string]any{"mode": p.Mode}
-	if p.Mode == supervisor.ModeResume {
+	switch p.Mode {
+	case supervisor.ModeResume:
 		task["instructions"] = p.Instructions
-	} else {
+	case supervisor.ModePlan, supervisor.ModeExecute:
+		// Plan/execute turns need the original task prompt, plus any feedback (the reviewer's discuss
+		// message on a re-plan, or the go-ahead on execute) folded in as instructions.
+		task["prompt"] = p.Input.Prompt
+		if len(p.Instructions) > 0 {
+			task["instructions"] = p.Instructions
+		}
+	default: // ModeInitial
 		task["prompt"] = p.Input.Prompt
 	}
 	return map[string]any{

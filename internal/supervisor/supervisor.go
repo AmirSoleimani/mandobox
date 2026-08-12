@@ -168,12 +168,13 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 }
 
-// shouldOpenPR reports whether a turn that produces changes should open the PR: only for an
-// initial-mode session that hasn't opened one yet. This lets a later turn open the PR when the
-// first turn made no changes (e.g. the operator dispatched a placeholder, then supplied the plan) —
-// while a resume-mode session (its PR already exists) never opens a second one.
+// shouldOpenPR reports whether a turn that produces changes should open the PR: for an initial- or
+// execute-mode session that hasn't opened one yet. This lets a later turn open the PR when the first
+// turn made no changes (e.g. the operator dispatched a placeholder, then supplied the plan) — while a
+// resume-mode session (its PR already exists) never opens a second one. ModeExecute is the post-approval
+// build turn of a plan session and opens the PR just like an initial run.
 func (s *Supervisor) shouldOpenPR() bool {
-	return s.cfg.Task.Mode == ModeInitial && !s.prOpened
+	return (s.cfg.Task.Mode == ModeInitial || s.cfg.Task.Mode == ModeExecute) && !s.prOpened
 }
 
 // turn runs one agent turn and finalizes it (commit/push; open the PR when shouldOpenPR and the
@@ -194,15 +195,68 @@ func (s *Supervisor) turn(ctx context.Context, spec AgentSpec, openPR bool) erro
 
 // firstTurnSpec builds the first turn's spec from the launch mode.
 func (s *Supervisor) firstTurnSpec() AgentSpec {
-	if s.cfg.Task.Mode == ModeResume {
+	switch s.cfg.Task.Mode {
+	case ModeResume:
 		queued, _ := s.queue.Drain()
 		return s.resumeSpec(s.cfg.Task.Instructions, queued)
+	case ModePlan:
+		queued, _ := s.queue.Drain()
+		return s.planSpec(s.cfg.Task.Instructions, queued)
+	case ModeExecute:
+		return s.executeSpec(s.cfg.Task.Instructions)
+	}
+	return AgentSpec{ // ModeInitial
+		WorkDir: s.repoDir, Model: s.cfg.Claude.Model,
+		BaseURL: s.cfg.LLM.BaseURL, AuthToken: s.cfg.LLM.AuthToken,
+		Auth: s.cfg.Agent.Auth, OAuthToken: s.cfg.Agent.OAuthToken,
+		Prompt: s.autonomousPreambleText() + s.cfg.Task.Prompt, SystemPrompt: s.cfg.Agent.Instructions,
+	}
+}
+
+// planSpec builds a PLAN turn: explore + write a plan to the sentinel, no code changes. Resume:true so
+// later discussion rounds continue the same Claude session (the plan and its rationale carry forward);
+// on the first plan turn readClaudeSession() is "" and agent.go simply omits --resume, so it starts fresh.
+func (s *Supervisor) planSpec(instructions, queued []string) AgentSpec {
+	var b strings.Builder
+	b.WriteString(s.planPreambleText())
+	b.WriteString("Task to plan:\n")
+	b.WriteString(s.cfg.Task.Prompt)
+	if len(instructions)+len(queued) > 0 {
+		b.WriteString("\n\nReviewer feedback to fold into the plan:\n")
+		for _, in := range instructions {
+			fmt.Fprintf(&b, "- %s\n", in)
+		}
+		for _, q := range queued {
+			fmt.Fprintf(&b, "- %s\n", q)
+		}
 	}
 	return AgentSpec{
 		WorkDir: s.repoDir, Model: s.cfg.Claude.Model,
 		BaseURL: s.cfg.LLM.BaseURL, AuthToken: s.cfg.LLM.AuthToken,
 		Auth: s.cfg.Agent.Auth, OAuthToken: s.cfg.Agent.OAuthToken,
-		Prompt: s.autonomousPreambleText() + s.cfg.Task.Prompt, SystemPrompt: s.cfg.Agent.Instructions,
+		Prompt: b.String(), Resume: true, ClaudeSessionID: s.readClaudeSession(),
+		SystemPrompt: s.cfg.Agent.Instructions,
+	}
+}
+
+// executeSpec builds the post-approval build turn: autonomous execution (same preamble as ModeInitial)
+// but resuming the plan transcript, so the agent implements the plan it and the reviewer converged on.
+func (s *Supervisor) executeSpec(instructions []string) AgentSpec {
+	var b strings.Builder
+	b.WriteString(s.autonomousPreambleText())
+	b.WriteString("You and the reviewer have agreed on a plan in this conversation — implement it now, " +
+		"exactly as discussed. ")
+	if approval := strings.TrimSpace(strings.Join(instructions, "\n")); approval != "" {
+		b.WriteString("Their go-ahead: " + approval + "\n\n")
+	}
+	b.WriteString("Original task:\n")
+	b.WriteString(s.cfg.Task.Prompt)
+	return AgentSpec{
+		WorkDir: s.repoDir, Model: s.cfg.Claude.Model,
+		BaseURL: s.cfg.LLM.BaseURL, AuthToken: s.cfg.LLM.AuthToken,
+		Auth: s.cfg.Agent.Auth, OAuthToken: s.cfg.Agent.OAuthToken,
+		Prompt: b.String(), Resume: true, ClaudeSessionID: s.readClaudeSession(),
+		SystemPrompt: s.cfg.Agent.Instructions,
 	}
 }
 
@@ -220,6 +274,12 @@ func (s *Supervisor) collaboratePreambleText() string {
 		return s.cfg.Agent.PreambleCollaborate + "\n\n"
 	}
 	return collaboratePreamble
+}
+
+// planPreambleText returns the plan-mode preamble. No operator override in this MVP (an overridable
+// plan preamble via the MMDS seam is a documented follow-up).
+func (s *Supervisor) planPreambleText() string {
+	return planPreamble
 }
 
 // resumeSpec builds a --resume spec that continues the same Claude Code session.
@@ -240,6 +300,22 @@ func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool, 
 	// The screenshot the agent chose to share this turn (if any), attached to whichever outcome we
 	// publish below — including a no-op turn, since "show me a screenshot" is a legitimate no-change turn.
 	shot := s.harvestScreenshot(turnStart)
+
+	// A pause for human direction: a plan turn ALWAYS pauses (its product is a plan), and any other mode
+	// pauses when the agent wrote the .mando/needs-input.md sentinel this turn (a genuine mid-task
+	// blocker). This turn makes no commit — the conversation advances, not the branch. For a plan turn we
+	// also discard the working tree so a plan is a guaranteed codebase no-op; a mid-task pause KEEPS the
+	// tree so real in-progress work is preserved for the resume.
+	if q, ok := s.needsInputFor(res, turnStart); ok {
+		if s.cfg.Task.Mode == ModePlan {
+			if err := s.git.Discard(ctx); err != nil {
+				s.deps.Log.Warn("discard plan-turn changes", "err", err)
+			}
+		}
+		s.deps.Log.Info("agent needs input — pausing for review", "mode", s.cfg.Task.Mode)
+		return s.deps.Bus.Event(Event{Type: EventNeedsInput, Question: q,
+			Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens, Screenshot: shot})
+	}
 
 	// Look at what changed before committing: a clean tree is the no-op turn, and the diff is what
 	// lets a cheap model write a real commit message instead of a fixed placeholder.
@@ -282,6 +358,55 @@ func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool, 
 // the agent's own and are never posted — sharing is on-demand (the reviewer asked, or the agent judged
 // the result worth showing), not automatic on every visual change.
 const shareScreenshotName = "share.png"
+
+// needsInputName is the sentinel the agent writes under .mando/ to pause the task for human direction —
+// the plan itself in plan mode (planPreamble), or a genuine mid-task blocker in any mode (needsInputClause).
+// Like the screenshot, it lives in the git-excluded .mando/ dir, so it never lands in a commit.
+const needsInputName = "needs-input.md"
+
+// needsInputFor decides whether this turn pauses for human direction and returns the text to surface.
+// A plan turn ALWAYS pauses — its product is a plan; it uses the sentinel the agent wrote, or falls back
+// to the agent's final message so a plan turn never silently proceeds without producing something. Any
+// other mode pauses only when the agent explicitly wrote the sentinel this turn.
+func (s *Supervisor) needsInputFor(res Result, turnStart time.Time) (string, bool) {
+	sentinel, ok := s.harvestNeedsInput(turnStart)
+	if s.cfg.Task.Mode == ModePlan {
+		if ok {
+			return sentinel, true
+		}
+		if r := strings.TrimSpace(res.Result); r != "" {
+			return r, true
+		}
+		return "(the agent finished planning but wrote no plan)", true
+	}
+	return sentinel, ok
+}
+
+// harvestNeedsInput returns the plan/question the agent wrote to .mando/needs-input.md THIS turn, mirroring
+// harvestScreenshot: O_NOFOLLOW (no symlink), this-turn-only (ModTime after turnStart), size-capped. The
+// text rides Event.Question into the workflow, so the cap is sized to stay well under Temporal's 2 MiB
+// activity-result blob limit even alongside a shared screenshot. Returns ("", false) on any problem.
+func (s *Supervisor) harvestNeedsInput(turnStart time.Time) (string, bool) {
+	const maxNeedsInputBytes = 256 << 10 // 256 KiB of plan text — ample; leaves blob-limit room for a screenshot
+	f, err := os.OpenFile(filepath.Join(s.repoDir, ".mando", needsInputName), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || !info.ModTime().After(turnStart) {
+		return "", false
+	}
+	if info.Size() > maxNeedsInputBytes {
+		s.deps.Log.Info("needs-input file too large to send", "bytes", info.Size())
+		return "", false
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxNeedsInputBytes))
+	if err != nil || strings.TrimSpace(string(b)) == "" {
+		return "", false
+	}
+	return string(b), true
+}
 
 // harvestScreenshot returns the screenshot the agent chose to share THIS turn — the file
 // .mando/share.png, if it was (re)written during this turn. The agent keeps .mando/ git-ignored
@@ -505,7 +630,7 @@ const autonomousPreamble = "You are running non-interactively, with no human ava
 	"explain why in your summary rather than following a bad instruction literally. Do NOT run " +
 	"git commit, git push, or gh, and do NOT open a pull request: committing, pushing, and the " +
 	"PR are handled automatically once you finish. Just make the file changes. " +
-	artifactHygiene + " " + selfReview + " " + visualCheck + "\n\n"
+	artifactHygiene + " " + selfReview + " " + visualCheck + " " + needsInputClause + "\n\n"
 
 // selfReview makes every code change arrive with its own evidence, so a reviewer can trust it
 // cheaply instead of re-deriving what it does and whether it works. The agent verifies its own
@@ -562,6 +687,32 @@ const visualCheck = "If your change has a visible effect in a browser (UI, styli
 	"change they want to see. The .mando/ capture directory is kept out of your commits automatically — " +
 	"do not add it to .gitignore or commit it; a screenshot-only request should change no files at all."
 
+// needsInputClause is shared by the autonomous and collaborate preambles: the escape hatch that lets a
+// turn PAUSE for a human instead of guessing. Writing the sentinel file is what makes the control plane
+// stop and ask (needs_input) — a question in the reply alone doesn't pause the task. Deliberately narrow
+// (genuine blockers only) so autonomous runs still finish on their own the vast majority of the time.
+const needsInputClause = "If you genuinely cannot proceed without a human decision — a requirement " +
+	"that is ambiguous in a way that materially changes the result, a destructive or irreversible " +
+	"choice, or a piece of information only the reviewer has — do NOT guess. Write your specific " +
+	"question to the file `.mando/needs-input.md` and stop: that pauses the task and asks the human, " +
+	"rather than proceeding on a bad assumption. Use this sparingly, only for real blockers."
+
+// planPreamble frames a PLAN turn: understand the project, then write a concrete implementation plan to
+// the .mando/needs-input.md sentinel and STOP — no code edits, no git. The turn pauses for the human to
+// review/refine; the agreed plan is built in a later turn (ModeExecute) that resumes this conversation.
+const planPreamble = "You are in PLAN MODE: produce a plan, do NOT implement it yet. First explore the " +
+	"repository enough to understand how it is built and where this change belongs — read the relevant " +
+	"code, the README/CONTRIBUTING, and the CI config. Then write a concrete, reviewable implementation " +
+	"plan to the file `.mando/needs-input.md` (create the .mando/ directory if it does not exist): what " +
+	"you will change and why, the specific files and functions involved, the approach and any alternatives " +
+	"you weighed, the risks, and how you will verify it. Do NOT edit source files, do NOT run git or gh, " +
+	"and do NOT open a pull request — this turn is planning only. End your chat message with a one- or " +
+	"two-line summary of the plan; the full plan lives in the file. Keep the plan short and skimmable — a " +
+	"few brief sections a reviewer can read in one chat message, well under 2000 characters, not an " +
+	"exhaustive document. A human will review it and either approve it or ask you to refine it, and you " +
+	"will implement it in a later turn — so make the plan good enough to build from. The .mando/ directory " +
+	"is kept out of commits automatically; do not add it to .gitignore.\n\n"
+
 // DefaultAutonomousPreamble / DefaultCollaboratePreamble expose the built-in preambles so the worker
 // can materialize them to disk for the dashboard (which shows them as the editable default / reset
 // baseline). They are the canonical source; an operator override replaces them per box.
@@ -584,8 +735,8 @@ const collaboratePreamble = "You are collaborating on an open pull request with 
 	"editing files; if you think it is wrong or there is a better path, do that and explain, or ask " +
 	"one sharp clarifying question. Your previous work is already in this workspace on its branch. " +
 	"Do NOT run git commit, git push, or gh, and do NOT open a pull request — that is handled for " +
-	"you. " + artifactHygiene + " " + selfReview + " " + visualCheck + " Your final message is posted straight back to " +
-	"the reviewer as your reply, so address them directly.\n\n"
+	"you. " + artifactHygiene + " " + selfReview + " " + visualCheck + " " + needsInputClause +
+	" Your final message is posted straight back to the reviewer as your reply, so address them directly.\n\n"
 
 // resumePrompt assembles a resume turn from the reviewer's messages.
 func resumePrompt(preamble string, instructions, queued []string) string {

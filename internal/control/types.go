@@ -87,6 +87,10 @@ type WorkflowInput struct {
 	VCPUs        int    `json:"vcpus"`
 	MemMiB       int    `json:"mem_mib"`
 	Policy       Policy `json:"policy"`
+	// PlanFirst (the --plan flag) makes the first turn produce a plan for human review before any code is
+	// written, then enter a discuss↔build loop. Defaults false, so every existing/old input is non-plan.
+	// Gated in the workflow by the "plan-mode" GetVersion, so an in-flight workflow is unaffected.
+	PlanFirst bool `json:"plan_first,omitempty"`
 	// Conversation is the chat surface this task talks to — set by the connector that dispatched it
 	// (e.g. slack-gateway sets Kind:"slack", Channel:<the channel /mando ran in>). Zero value → the
 	// default connector's default channel. This is the seam a new chat connector plugs into.

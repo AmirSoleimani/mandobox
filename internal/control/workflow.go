@@ -76,9 +76,41 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	// Hard TTL bounds the whole workflow.
 	ttl := workflow.NewTimer(ctx, in.Policy.HardTTL)
 
-	// Initial phase: mint → launch → run, and keep the VM warm for the review that follows.
-	res := launchWarm(ctx, in, st, supervisor.ModeInitial, nil)
+	// Plan-mode gate: an opt-in --plan dispatch runs a PLAN turn first and enters a discuss↔build loop
+	// before any code is written; the same loop also handles a mid-task pause (the agent asking for
+	// direction) below. Version-gated so an in-flight/older workflow replays its original single-path
+	// behavior (DefaultVersion → the ModeInitial branch, discussion unreachable) with no drain.
+	planV := workflow.GetVersion(ctx, "plan-mode", workflow.DefaultVersion, 1)
+
+	// Initial phase: mint → launch → run, and keep the VM warm for the review that follows. With --plan
+	// the first turn produces a plan (ModePlan) and pauses for approval instead of building straight away.
+	var res PhaseResult
+	if planV >= 1 && in.PlanFirst {
+		res = launchWarm(ctx, in, st, supervisor.ModePlan, nil)
+	} else {
+		res = launchWarm(ctx, in, st, supervisor.ModeInitial, nil)
+	}
 	recordOutcome(ctx, st, in, res)
+
+	// Drive any pause-for-direction — the plan turn, or a first turn that hit a genuine blocker — through
+	// the discussion loop before the usual reporting. runDiscussion records the cost of the turns it runs
+	// and returns the eventual build turn; a non-empty reason means the reviewer ended the session first.
+	planDiscuss := planV >= 1 && in.PlanFirst // only under --plan is the first pause a real plan review
+	for planV >= 1 && res.Outcome == supervisor.EventNeedsInput {
+		discussMode := supervisor.ModeResume
+		if planDiscuss {
+			discussMode = supervisor.ModePlan
+		}
+		planDiscuss = false // any pause after the first is over in-progress work — preserve the tree
+		var reason string
+		res, reason = runDiscussion(ctx, in, st, ttl, res, discussMode)
+		if reason != "" {
+			st.Phase = "aborted:" + reason
+			destroyWorkspace(ctx, st)
+			finalSummary(ctx, st, startTime)
+			return *st, nil
+		}
+	}
 
 	// Read the no-PR-waits-for-input version gate before deciding how to report the initial turn (so
 	// it sits above reportPhase and the command order is stable). A workflow recorded before this
@@ -381,21 +413,38 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 					r = launchWarm(ctx, in, st, supervisor.ModeResume, instructions)
 				}
 				recordOutcome(ctx, st, in, r)
+				// A mid-task turn can pause for direction (the agent wrote the needs-input sentinel).
+				// Resolve it through the discussion loop — it returns the eventual build turn, records its
+				// own turns, and sets a reason only if the reviewer ended the session.
+				for planV >= 1 && r.Outcome == supervisor.EventNeedsInput && !aborted {
+					// A PR already exists here (or in-progress work does) — discuss in ModeResume so the
+					// tree is preserved, never ModePlan (which would discard the work).
+					var reason string
+					r, reason = runDiscussion(ctx, in, st, ttl, r, supervisor.ModeResume)
+					if reason != "" {
+						aborted, abortReason = true, reason
+					}
+				}
 				// If the VM dropped before it addressed the feedback, don't lose it — put it back
 				// and retry on a fresh cold session next round instead of silently swallowing it.
-				if r.Outcome == supervisor.EventAgentFailed {
+				switch {
+				case aborted:
+					// the discussion ended the session — the teardown after the loop handles it
+				case r.Outcome == supervisor.EventAgentFailed:
 					st.PendingInstructions = append(instructions, st.PendingInstructions...)
 					pendingFromPR = pendingFromPR || fromPR // preserve origin for the retry
 					coalesce = workflow.NewTimer(ctx, in.Policy.ReviewDebounce)
 					notify(ctx, st, ":arrows_counterclockwise: That didn't land (the session dropped) — retrying on a fresh one…")
-				} else {
+				default:
 					if fromPR { // feedback came from GitHub — the full reply goes back on the PR thread…
 						postPRReply(ctx, st, r.Reply, replyToID)
 					}
 					reportPhase(ctx, st, r, fromPR) // …and Slack gets a full mirror or a light breadcrumb
 				}
-				st.Phase = "awaiting_review"
-				armKeepAlive()
+				if !aborted {
+					st.Phase = "awaiting_review"
+					armKeepAlive()
+				}
 			}
 		}
 
@@ -961,6 +1010,134 @@ func classifyIntent(ctx workflow.Context, in WorkflowInput, msg string) string {
 		return "message"
 	}
 	return intent
+}
+
+// classifyPlanDecision asks the cheap model whether a reply during plan discussion means "start
+// building" (proceed) or "keep refining the plan" (discuss). Fails safe to "discuss" — an ambiguous
+// reply never auto-launches a build.
+func classifyPlanDecision(ctx workflow.Context, in WorkflowInput, msg string) string {
+	var a *Activities
+	var decision string
+	if err := workflow.ExecuteActivity(mintCtx(ctx), a.ClassifyPlanDecision, msg).Get(ctx, &decision); err != nil {
+		return "discuss"
+	}
+	return decision
+}
+
+// runDiscussion drives the plan/discuss ↔ build loop after a turn paused for human direction (the agent
+// wrote the needs-input sentinel). It presents the plan/question, then durably parks — the VM was already
+// torn down by settle, so no keepAlive is armed and this can't hit the "no plan came through" auto-end —
+// and blocks on the reviewer's reply. An LLM classifies each reply: "proceed" runs the build turn and
+// returns it (which may itself pause, so the caller loops); anything else re-plans and stays here. Returns
+// a non-empty reason on a clean end (abort or hard TTL). It records the cost of every turn it runs, so the
+// caller must NOT recordOutcome the returned result again. `pending` is the paused result to present.
+//
+// discussMode is the mode a "keep discussing" reply re-launches: ModePlan for a genuine pre-build plan
+// discussion (a re-plan turn discards any stray edits — safe, there's no real work yet), or ModeResume for
+// a mid-task blocker (a collaborate turn that PRESERVES the in-progress tree, since discarding would throw
+// away real work). The caller picks it; within one invocation it stays fixed (a "proceed" turn exits).
+func runDiscussion(ctx workflow.Context, in WorkflowInput, st *State, ttl workflow.Future, pending PhaseResult, discussMode string) (PhaseResult, string) {
+	userMessage := workflow.GetSignalChannel(ctx, SignalUserMessage)
+	abort := workflow.GetSignalChannel(ctx, SignalAbort)
+	for {
+		if !st.CostCeilingReached { // once the ceiling latches we're just holding — don't re-post the plan
+			postNeedsInput(ctx, st, pending)
+			st.Phase = "discussing"
+		}
+
+		var text, attach, abortReason string
+		var gotAbort, ttlFired bool
+		sel := workflow.NewSelector(ctx)
+		sel.AddReceive(userMessage, func(c workflow.ReceiveChannel, _ bool) {
+			var s UserMessageSignal
+			c.Receive(ctx, &s)
+			text, attach = s.Text, s.Attachments
+		})
+		sel.AddReceive(abort, func(c workflow.ReceiveChannel, _ bool) {
+			var s AbortSignal
+			c.Receive(ctx, &s)
+			gotAbort, abortReason = true, s.Reason
+		})
+		sel.AddFuture(ttl, func(workflow.Future) { ttlFired = true })
+		sel.Select(ctx)
+
+		switch {
+		case gotAbort:
+			if abortReason == "" {
+				abortReason = "aborted"
+			}
+			return pending, abortReason
+		case ttlFired:
+			return pending, "hard_ttl"
+		}
+
+		// Fold any attachment into the instruction, but classify on the message text alone (a plan that
+		// literally says "proceed" must not decide for the human).
+		instruction := strings.TrimSpace(text)
+		if attach != "" {
+			instruction = strings.TrimSpace(instruction + "\n\n" + attach)
+		}
+		if instruction == "" {
+			continue // spurious wake / empty reply — re-present the plan
+		}
+
+		// Anti-abuse: untrusted replies must not drive unbounded planning spend. Once the ceiling is hit,
+		// stop running turns and hold until the reviewer aborts or the TTL fires (a re-dispatch raises it).
+		if costCeilingReached(in, st) {
+			if !st.CostCeilingReached {
+				st.CostCeilingReached = true
+				notify(ctx, st, fmt.Sprintf(":no_entry: Cost ceiling ($%.2f) reached — planning is paused to cap spend on this session. Start a fresh task to keep going.", in.Policy.CostCeilingUSD))
+			}
+			st.Phase = "cost_ceiling_reached"
+			continue
+		}
+
+		if classifyPlanDecision(ctx, in, text) == "proceed" {
+			notify(ctx, st, ":white_check_mark: On it — building the plan we agreed on.")
+			mode := supervisor.ModeExecute
+			if st.PRNumber > 0 {
+				mode = supervisor.ModeResume // a PR already exists — push to it, don't open a second
+			}
+			r := launchWarm(ctx, in, st, mode, []string{instruction})
+			recordOutcome(ctx, st, in, r)
+			return r, ""
+		}
+		// Keep discussing: re-engage in discussMode (a plan re-plan, or a collaborate turn that preserves
+		// a mid-task tree) with the feedback folded in.
+		notify(ctx, st, ":memo: Reworking the plan…")
+		res := launchWarm(ctx, in, st, discussMode, []string{instruction})
+		recordOutcome(ctx, st, in, res)
+		if res.Outcome != supervisor.EventNeedsInput {
+			// The re-plan turn didn't pause (an error, or it unexpectedly changed code). Hand it back to
+			// the caller to report/handle rather than loop forever presenting a non-plan.
+			return res, ""
+		}
+		pending = res
+	}
+}
+
+// postNeedsInput presents a paused turn's plan (or blocker question) to the chat with a nudge on how to
+// proceed. The plan is truncated for chat — the plan preamble asks the agent to keep it skimmable, and
+// the full text stays in the agent's transcript for the build turn.
+func postNeedsInput(ctx workflow.Context, st *State, res PhaseResult) {
+	q := toSlackMrkdwn(strings.TrimSpace(res.Question))
+	reply := toSlackMrkdwn(strings.TrimSpace(res.Reply))
+	var b strings.Builder
+	b.WriteString(":clipboard: *Plan / question — over to you*\n")
+	if reply != "" && reply != q {
+		b.WriteString(truncate(reply, 800))
+		b.WriteString("\n\n")
+	}
+	if q != "" {
+		b.WriteString(truncate(q, 2500))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n_Reply to refine it, or say the word and I'll build it._")
+	notify(ctx, st, b.String())
+	// A paused turn may attach a screenshot (e.g. a mid-task "here's what I'm looking at"); share it too.
+	if len(res.Screenshot) > 0 {
+		postScreenshot(ctx, st, res.Screenshot, "📸 Current state")
+	}
 }
 
 // ---- per-activity option contexts (retry + timeout tuned per activity) ----

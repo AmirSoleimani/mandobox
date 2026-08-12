@@ -36,8 +36,9 @@ func NewDispatcher(tc client.Client, namespace string) *Dispatcher {
 }
 
 // Dispatch starts a PRWorkflow for a conversation + repo + prompt. cheap selects the cheap model;
-// everything else (model, resources) comes from the resolved config. Returns the new session id.
-func (d *Dispatcher) Dispatch(ctx context.Context, conv control.Conversation, repo, prompt string, cheap bool) (string, error) {
+// planFirst (the --plan flag) makes the agent plan for review before building; everything else (model,
+// resources) comes from the resolved config. Returns the new session id.
+func (d *Dispatcher) Dispatch(ctx context.Context, conv control.Conversation, repo, prompt string, cheap, planFirst bool) (string, error) {
 	imageSHA := d.ResolveImageSHA()
 	if imageSHA == "" {
 		return "", fmt.Errorf("no golden image is active")
@@ -58,6 +59,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, conv control.Conversation, re
 		Prompt:       prompt,
 		ImageSHA:     imageSHA,
 		Model:        model,
+		PlanFirst:    planFirst,
 		Conversation: conv,
 	}
 	if _, err := d.tc.ExecuteWorkflow(ctx, client.StartWorkflowOptions{

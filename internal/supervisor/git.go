@@ -198,6 +198,18 @@ func (g *Git) Commit(ctx context.Context, message string) (sha string, changed b
 	return strings.TrimSpace(sha), true, nil
 }
 
+// Discard resets the working tree to HEAD — revert tracked edits (staged AND unstaged) and remove new
+// untracked files — so a plan turn is a guaranteed codebase no-op (plan mode explores and writes a plan;
+// it must not change code). `reset --hard` (not `checkout -- .`) so even staged edits can't survive into a
+// later build turn. The .mando/ capture dir is git-excluded (excludeCaptureDir), so `git clean -fd` leaves
+// it and the just-harvested sentinel alone; only stray source edits and new files are undone.
+func (g *Git) Discard(ctx context.Context) error {
+	if err := g.git(ctx, "reset", "--hard", "HEAD"); err != nil {
+		return err
+	}
+	return g.git(ctx, "clean", "-fd")
+}
+
 // Push publishes the agent branch. Agents can only push to agent/* — main is protected by
 // GitHub, not by us.
 func (g *Git) Push(ctx context.Context) error {
