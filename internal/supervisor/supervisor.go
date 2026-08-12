@@ -276,9 +276,12 @@ func (s *Supervisor) collaboratePreambleText() string {
 	return collaboratePreamble
 }
 
-// planPreambleText returns the plan-mode preamble. No operator override in this MVP (an overridable
-// plan preamble via the MMDS seam is a documented follow-up).
+// planPreambleText returns the operator's box-side plan-mode override when set, else the built-in default
+// — same override mechanism as the autonomous/collaborate preambles, editable from the dashboard.
 func (s *Supervisor) planPreambleText() string {
+	if p := strings.TrimSpace(s.cfg.Agent.PreamblePlan); p != "" {
+		return s.cfg.Agent.PreamblePlan + "\n\n"
+	}
 	return planPreamble
 }
 
@@ -719,6 +722,7 @@ const planPreamble = "You are in PLAN MODE: produce a plan, do NOT implement it 
 const (
 	DefaultAutonomousPreamble  = autonomousPreamble
 	DefaultCollaboratePreamble = collaboratePreamble
+	DefaultPlanPreamble        = planPreamble
 )
 
 // collaboratePreamble frames a resume turn as a chat with the reviewer: answer questions, make

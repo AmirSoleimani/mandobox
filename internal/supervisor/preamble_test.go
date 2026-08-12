@@ -15,16 +15,24 @@ func TestPreambleOverride(t *testing.T) {
 		t.Error("collaborate: expected built-in default when no override")
 	}
 
+	if s.planPreambleText() != planPreamble {
+		t.Error("plan: expected built-in default when no override")
+	}
+
 	// Override set → used, with a trailing separator so the task doesn't run into it.
 	s = &Supervisor{cfg: BootConfig{Agent: AgentConfig{
 		PreambleAutonomous:  "Be brief.",
 		PreambleCollaborate: "Be kind.",
+		PreamblePlan:        "Plan tersely.",
 	}}}
 	if got := s.autonomousPreambleText(); got != "Be brief.\n\n" {
 		t.Errorf("autonomous override = %q", got)
 	}
 	if got := s.collaboratePreambleText(); !strings.HasPrefix(got, "Be kind.") {
 		t.Errorf("collaborate override = %q", got)
+	}
+	if got := s.planPreambleText(); got != "Plan tersely.\n\n" {
+		t.Errorf("plan override = %q", got)
 	}
 
 	// Whitespace-only override is treated as empty → default.
@@ -35,7 +43,8 @@ func TestPreambleOverride(t *testing.T) {
 }
 
 func TestDefaultPreamblesExported(t *testing.T) {
-	if DefaultAutonomousPreamble != autonomousPreamble || DefaultCollaboratePreamble != collaboratePreamble {
+	if DefaultAutonomousPreamble != autonomousPreamble || DefaultCollaboratePreamble != collaboratePreamble ||
+		DefaultPlanPreamble != planPreamble {
 		t.Fatal("exported default preambles must match the internal constants")
 	}
 }

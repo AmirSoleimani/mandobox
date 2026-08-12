@@ -217,6 +217,7 @@ type LaunchParams struct {
 	// deterministic workflow). Empty → the guest uses its built-in default preamble.
 	PreambleAutonomous  string
 	PreambleCollaborate string
+	PreamblePlan        string
 	// Agent auth (operator box config, read by the LaunchVM activity). Auth "subscription" injects the
 	// OAuthToken so the guest's Claude Code runs on the operator's plan; "" / "api_key" → the gateway.
 	Auth       string

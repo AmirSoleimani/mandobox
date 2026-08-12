@@ -75,6 +75,7 @@ func main() {
 	instructionsPath := flag.String("instructions", env("MANDO_INSTRUCTIONS", "/etc/fleet/agent-instructions.md"), "box-wide default agent instructions file")
 	preambleAuto := flag.String("preamble-autonomous", env("MANDO_PREAMBLE_AUTONOMOUS", "/etc/fleet/preamble-autonomous.md"), "autonomous-turn preamble override file")
 	preambleCollab := flag.String("preamble-collaborate", env("MANDO_PREAMBLE_COLLABORATE", "/etc/fleet/preamble-collaborate.md"), "collaborate-turn preamble override file")
+	preamblePlan := flag.String("preamble-plan", env("MANDO_PREAMBLE_PLAN", "/etc/fleet/preamble-plan.md"), "plan-turn preamble override file")
 	logDir := flag.String("log-dir", env("FLEET_LOG_DIR", "/var/lib/fleet/logs"), "archived guest agent-activity logs (<session>.log.jsonl)")
 	dispatchBin := flag.String("dispatch-bin", env("MANDO_DISPATCH", "/usr/local/bin/mando-dispatch"), "the mando-dispatch entry point (New Session)")
 	litellmAddr := flag.String("litellm", env("LITELLM_ADDR", "127.0.0.1:4000"), "LiteLLM host:port (health check)")
@@ -96,7 +97,7 @@ func main() {
 		vms:          vms,
 		secrets:      secrets,
 		instructions: newInstructionsStore(*instructionsPath),
-		preambles:    newPreambleStore(*preambleAuto, *preambleCollab),
+		preambles:    newPreambleStore(*preambleAuto, *preambleCollab, *preamblePlan),
 		activity:     newActivityStore(*logDir),
 		dispatch:     newDispatchStore(*dispatchBin, *imagesDir, *temporalAddr, *namespace),
 		health:       newHealthStore(*temporalAddr, *litellmAddr, *natsAddr, *fleetURL, *diskPath, vms, tools, secrets),

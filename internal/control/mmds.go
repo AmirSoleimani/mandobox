@@ -68,6 +68,9 @@ func agentMMDS(p LaunchParams) map[string]any {
 	if p.PreambleCollaborate != "" {
 		agent["preamble_collaborate"] = p.PreambleCollaborate
 	}
+	if p.PreamblePlan != "" {
+		agent["preamble_plan"] = p.PreamblePlan
+	}
 	if p.CheapModel != "" {
 		agent["cheap_model"] = p.CheapModel
 	}

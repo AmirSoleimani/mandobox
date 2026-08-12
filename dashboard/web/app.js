@@ -970,6 +970,7 @@ const DOCS = [
     note: 'Appended to every session\'s system prompt. A repo\'s <code>.mandobox.yml instructions:</code> overrides this per repo. Empty → none. Guidance the agent follows, not a hard guardrail.' },
   { id: "autonomous", kind: "preamble", name: "autonomous", label: "Autonomous preamble", sub: "base prompt · first / headless turn", note: PREAMBLE_WARN },
   { id: "collaborate", kind: "preamble", name: "collaborate", label: "Collaborate preamble", sub: "base prompt · review / resume turn", note: PREAMBLE_WARN },
+  { id: "plan", kind: "preamble", name: "plan", label: "Plan preamble", sub: "base prompt · /mando --plan (plan-first) turn", note: PREAMBLE_WARN },
 ];
 
 const docState = {};   // id → { server, def, hasOverride, value, modified, path, exists }
