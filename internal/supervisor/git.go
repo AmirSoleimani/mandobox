@@ -117,14 +117,39 @@ func (g *Git) Prepare(ctx context.Context) error {
 		if err := g.git(ctx, "fetch", "origin"); err != nil {
 			return err
 		}
-		return g.git(ctx, "checkout", branch)
+		if err := g.git(ctx, "checkout", branch); err != nil {
+			return err
+		}
+		g.excludeCaptureDir()
+		return nil
 	}
 	// Initial: fresh clone of the base branch, then a new agent branch.
 	if err := g.runner.Run(ctx, "git", "clone", "--branch", g.cfg.Repo.BaseBranch,
 		g.cfg.Repo.CloneURL, g.repoDir); err != nil {
 		return fmt.Errorf("clone: %w", err)
 	}
-	return g.git(ctx, "checkout", "-b", branch)
+	if err := g.git(ctx, "checkout", "-b", branch); err != nil {
+		return err
+	}
+	g.excludeCaptureDir()
+	return nil
+}
+
+// excludeCaptureDir keeps the agent's screenshot directory (.mando/) out of commits via the repo-local
+// .git/info/exclude — which is NOT itself committed. So a capture never lands in the tree, and a
+// screenshot-only request stays a true no-op (no PR) without the agent having to edit .gitignore.
+// Best-effort: on any failure the agent's own artifact-hygiene still applies.
+func (g *Git) excludeCaptureDir() {
+	p := filepath.Join(g.repoDir, ".git", "info", "exclude")
+	if b, err := os.ReadFile(p); err == nil && strings.Contains(string(b), "\n.mando/") {
+		return // already excluded (persisted workspace)
+	}
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString("\n# mandobox visual-verification captures — never committed\n.mando/\n")
 }
 
 // PendingDiff stages all changes and returns a --stat summary plus the unified diff of what a

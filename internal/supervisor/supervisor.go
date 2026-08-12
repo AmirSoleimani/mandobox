@@ -557,7 +557,8 @@ const visualCheck = "If your change has a visible effect in a browser (UI, styli
 	"run `mando-shot <url> --out .mando/share.png`. That one file is delivered into the reviewer's chat " +
 	"as an actual image; a written description is NOT a substitute, so when they ask to see something, " +
 	"capture it there rather than only describing it. It reflects THIS turn, so re-capture it after each " +
-	"change they want to see. Keep the capture directory out of the commit (put .mando/ in .gitignore)."
+	"change they want to see. The .mando/ capture directory is kept out of your commits automatically — " +
+	"do not add it to .gitignore or commit it; a screenshot-only request should change no files at all."
 
 // DefaultAutonomousPreamble / DefaultCollaboratePreamble expose the built-in preambles so the worker
 // can materialize them to disk for the dashboard (which shows them as the editable default / reset
