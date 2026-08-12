@@ -102,9 +102,9 @@ func (t *telegramNotifier) Update(ctx context.Context, conv Conversation, messag
 // PostImage sends a PNG into the chat via the Bot API sendPhoto (multipart upload). The caption is
 // plain text (no parse_mode) so it needs no escaping. Telegram routing is chat-scoped, so chat_id
 // already targets the session's conversation.
-func (t *telegramNotifier) PostImage(ctx context.Context, conv Conversation, caption string, png []byte, filename string) error {
+func (t *telegramNotifier) PostImage(ctx context.Context, conv Conversation, caption string, png []byte, filename string) (string, error) {
 	if t.token == "" || len(png) == 0 {
-		return nil
+		return "", nil
 	}
 	chat := conv.Channel
 	if chat == "" {
@@ -121,41 +121,45 @@ func (t *telegramNotifier) PostImage(ctx context.Context, conv Conversation, cap
 	}
 	fw, err := mw.CreateFormFile("photo", filename)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if _, err := fw.Write(png); err != nil {
-		return err
+		return "", err
 	}
 	if err := mw.Close(); err != nil {
-		return err
+		return "", err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		"https://api.telegram.org/bot"+t.token+"/sendPhoto", &buf)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	resp, err := uploadHTTPClient().Do(req) // fresh, non-pooled connection — see uploadHTTPClient
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	// Telegram's error responses (4xx) carry the actionable detail in the JSON "description" (e.g. "Bad
 	// Request: chat not found", caption too long), so parse it before the status check and surface it.
+	// result.message_id is the photo message's id — recorded so a reply to the screenshot steers this session.
 	var out struct {
 		OK          bool   `json:"ok"`
 		Description string `json:"description"`
+		Result      struct {
+			MessageID int64 `json:"message_id"`
+		} `json:"result"`
 	}
 	_ = json.Unmarshal(data, &out)
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("telegram sendPhoto: http %s: %s", resp.Status, out.Description)
+		return "", fmt.Errorf("telegram sendPhoto: http %s: %s", resp.Status, out.Description)
 	}
 	if !out.OK {
-		return fmt.Errorf("telegram sendPhoto: %s", out.Description)
+		return "", fmt.Errorf("telegram sendPhoto: %s", out.Description)
 	}
-	return nil
+	return strconv.FormatInt(out.Result.MessageID, 10), nil
 }
 
 func (t *telegramNotifier) call(ctx context.Context, method string, body, out any) error {

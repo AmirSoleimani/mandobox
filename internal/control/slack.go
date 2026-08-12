@@ -136,9 +136,12 @@ func uploadHTTPClient() *http.Client {
 // files.getUploadURLExternal → POST the bytes to the returned URL → files.completeUploadExternal
 // (which shares it into channel_id/thread_ts). Requires the bot **files:write** scope; without it
 // Slack returns an error here and the caller (PostImage activity) treats it as best-effort.
-func (s *slackNotifier) PostImage(ctx context.Context, conv Conversation, caption string, png []byte, filename string) error {
+// Returns "" for the message id: Slack routes replies by thread_ts (the file is shared into the
+// session's thread), so per-message reply-routing tokens aren't needed — a reply to the screenshot
+// already carries the thread and resolves via the conversation search attribute.
+func (s *slackNotifier) PostImage(ctx context.Context, conv Conversation, caption string, png []byte, filename string) (string, error) {
 	if s.token == "" || len(png) == 0 {
-		return nil
+		return "", nil
 	}
 	channel := conv.Channel
 	if channel == "" {
@@ -157,15 +160,15 @@ func (s *slackNotifier) PostImage(ctx context.Context, conv Conversation, captio
 	}
 	if err := s.callForm(ctx, "files.getUploadURLExternal",
 		url.Values{"filename": {filename}, "length": {strconv.Itoa(len(png))}}, &up); err != nil {
-		return err
+		return "", err
 	}
 	if !up.OK {
-		return fmt.Errorf("slack files.getUploadURLExternal: %s", up.Error)
+		return "", fmt.Errorf("slack files.getUploadURLExternal: %s", up.Error)
 	}
 
 	// 2) POST the bytes to the pre-signed URL (multipart; no auth header on the upload URL itself).
 	if err := s.uploadBytes(ctx, up.UploadURL, filename, png); err != nil {
-		return err
+		return "", err
 	}
 
 	// 3) finish the upload, which shares the file into the channel/thread.
@@ -184,12 +187,12 @@ func (s *slackNotifier) PostImage(ctx context.Context, conv Conversation, captio
 		Error string `json:"error"`
 	}
 	if err := s.call(ctx, "files.completeUploadExternal", body, &done); err != nil {
-		return err
+		return "", err
 	}
 	if !done.OK {
-		return fmt.Errorf("slack files.completeUploadExternal: %s", done.Error)
+		return "", fmt.Errorf("slack files.completeUploadExternal: %s", done.Error)
 	}
-	return nil
+	return "", nil
 }
 
 // callForm POSTs application/x-www-form-urlencoded to a Slack Web API method (the upload handshake,
