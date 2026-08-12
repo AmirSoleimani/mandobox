@@ -73,7 +73,7 @@ and manage models, connectors, costs, health, and secrets from one place.
 - **Pluggable agents & providers** — Claude Code by default (OpenAI Codex as a second harness); run
   on an API key or [your own Claude subscription](docs/subscription-auth.md).
 
-→ **[Configuration guide](docs/configuration.md)** · [`mandobox.example.yml`](mandobox.example.yml)
+→ **[Configuration guide](docs/configuration.md)** · [`mandobox.example.yml`](mandobox.example.yml) · [Visual preview](docs/preview.md)
 
 ## Roadmap
 

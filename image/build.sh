@@ -10,7 +10,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/dist/images}"
-SIZE_MB="${SIZE_MB:-2048}" # target 1–2GB
+SIZE_MB="${SIZE_MB:-3072}" # ~2–3GB (headroom for the baked-in Chromium/Playwright)
 IMAGE_TAG="fleet-golden:build"
 EXPORT_NAME="fleet-golden-export-$$"
 

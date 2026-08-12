@@ -18,7 +18,7 @@ CMD="${1:-assemble}"
 OUT_DIR="${OUT_DIR:-/var/lib/fleet/images}"
 BASE_DIR="${BASE_DIR:-/var/lib/fleet/base}"
 BASE_TAR="$BASE_DIR/base.tar.zst"
-SIZE_MB="${SIZE_MB:-2048}"
+SIZE_MB="${SIZE_MB:-3072}"  # ~2–3GB (headroom for the baked-in Chromium/Playwright)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # Distro match (a Debian rootfs on an Ubuntu host fails apt signature verification, and vice versa).
@@ -31,6 +31,7 @@ esac
 
 # Base toolchain versions (stable — a change means rebuilding the base).
 NODE_MAJOR="${NODE_MAJOR:-22}"
+PLAYWRIGHT_VERSION="${PLAYWRIGHT_VERSION:-1.62.1}"  # headless browser for visual self-verification
 GH_VERSION="${GH_VERSION:-2.96.0}"
 GOLANGCI_LINT_VERSION="${GOLANGCI_LINT_VERSION:-2.12.2}"
 GO_VERSION="${GO_VERSION:-1.25.12}"
@@ -61,12 +62,21 @@ build_base() {
   cp /etc/resolv.conf "$rootfs/etc/resolv.conf"
   for fs in proc sys dev; do mount --bind "/$fs" "$rootfs/$fs"; mounted="$rootfs/$fs $mounted"; done
 
+  # mando-shot (visual self-verification) is a repo-local asset; drop it in before the chroot installs
+  # its Playwright/Chromium runtime around it.
+  install -D -m 0755 "$HERE/assets/mando-shot.js" "$rootfs/opt/mando-shot/mando-shot.js"
+
   cat >"$rootfs/tmp/base.sh" <<INSTALL
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 ln -sf "\$(command -v fdfind)" /usr/local/bin/fd
 curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
 apt-get install -y --no-install-recommends nodejs
+# Headless browser (Playwright + Chromium) for visual self-verification (docs/preview.md): the agent
+# screenshots its own running change and reads the PNG back. In-guest vs localhost only — no egress.
+( cd /opt/mando-shot && npm init -y >/dev/null && npm install "playwright@${PLAYWRIGHT_VERSION}" )
+PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright /opt/mando-shot/node_modules/.bin/playwright install --with-deps chromium
+ln -sf /opt/mando-shot/mando-shot.js /usr/local/bin/mando-shot
 curl -fsSL -o /tmp/gh.tgz "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz"
 tar -xzf /tmp/gh.tgz -C /tmp
 install -m 0755 "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
@@ -94,8 +104,8 @@ GOCACHE=/workspace/.cache/go/build
 npm_config_cache=/workspace/.cache/npm
 PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin:/sbin
 ENVV
-  printf 'node_major=%s\ngh=%s\ngo=%s\ngolangci-lint=%s\n' \
-    "$NODE_MAJOR" "$GH_VERSION" "$GO_VERSION" "$GOLANGCI_LINT_VERSION" > "$rootfs/etc/fleet-base-versions"
+  printf 'node_major=%s\nplaywright=%s\ngh=%s\ngo=%s\ngolangci-lint=%s\n' \
+    "$NODE_MAJOR" "$PLAYWRIGHT_VERSION" "$GH_VERSION" "$GO_VERSION" "$GOLANGCI_LINT_VERSION" > "$rootfs/etc/fleet-base-versions"
 
   for m in $mounted; do umount -l "$m" 2>/dev/null || true; done; mounted=""
   rm -f "$rootfs/etc/resolv.conf"
