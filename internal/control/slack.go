@@ -121,6 +121,17 @@ func (s *slackNotifier) call(ctx context.Context, method string, body, out any) 
 	return json.Unmarshal(data, out)
 }
 
+// uploadHTTPClient returns a client for one-off image uploads: connection reuse DISABLED so a fresh
+// connection is dialed each time. The notifiers' shared client is long-lived (the worker runs for
+// hours); an idle pooled keep-alive connection the server has quietly dropped, reused for a multipart
+// upload, wedges the write and hangs until the timeout — which is exactly the intermittent sendPhoto
+// timeout observed in production. A fresh connection avoids that; the generous timeout covers a slow
+// upload. (A bare custom Transport also uses HTTP/1.1, the predictable path for uploads.) Uploads are
+// infrequent, so the extra TCP+TLS handshake per call is negligible.
+func uploadHTTPClient() *http.Client {
+	return &http.Client{Timeout: 25 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
+}
+
 // PostImage uploads a PNG into the conversation's thread via Slack's files.uploadV2 flow:
 // files.getUploadURLExternal → POST the bytes to the returned URL → files.completeUploadExternal
 // (which shares it into channel_id/thread_ts). Requires the bot **files:write** scope; without it
@@ -225,11 +236,7 @@ func (s *slackNotifier) uploadBytes(ctx context.Context, uploadURL, filename str
 		return err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	client := s.client
-	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
-	}
-	resp, err := client.Do(req)
+	resp, err := uploadHTTPClient().Do(req)
 	if err != nil {
 		return err
 	}
