@@ -24,6 +24,7 @@ var emojiUnicode = map[string]string{
 	"information_source": "ℹ️", "globe_with_meridians": "🌐",
 	"cyclone": "🌀", "sparkles": "✨", "thought_balloon": "💭", "crystal_ball": "🔮",
 	"gear": "⚙️", "brain": "🧠", "ocean": "🌊", "hammer_and_wrench": "🛠️",
+	"clipboard": "📋", "white_check_mark": "✅", "memo": "📝",
 }
 
 var emojiRe = regexp.MustCompile(`:([a-z0-9_+-]+):`)

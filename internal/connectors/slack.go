@@ -108,17 +108,11 @@ func (s *slackConnector) handleSlash(ctx context.Context, d *Dispatcher, cmd sla
 		}
 		return attachDetach(ctx, d, cmd.UserID, f[0], target)
 	}
-	rest := text
-	cheap := false
-	if r, found := strings.CutPrefix(text, "--cheap "); found {
-		cheap, rest = true, strings.TrimSpace(r)
+	repo, prompt, cheap, plan, ok := parseDispatch(text) // shared with Telegram — identical flag surface
+	if !ok {
+		return "usage: `/mando [--cheap] [--plan] <owner/repo> <prompt>`"
 	}
-	repo, prompt, split := strings.Cut(rest, " ")
-	prompt = strings.TrimSpace(prompt)
-	if !split || !strings.Contains(repo, "/") || prompt == "" {
-		return "usage: `/mando [--cheap] <owner/repo> <prompt>`"
-	}
-	sid, err := d.Dispatch(ctx, control.Conversation{Kind: "slack", Channel: cmd.ChannelID}, repo, prompt, cheap)
+	sid, err := d.Dispatch(ctx, control.Conversation{Kind: "slack", Channel: cmd.ChannelID}, repo, prompt, cheap, plan)
 	if err != nil {
 		return "failed to dispatch: " + err.Error()
 	}

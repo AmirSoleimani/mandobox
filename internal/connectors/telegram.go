@@ -134,13 +134,13 @@ func (t *telegramConnector) command(ctx context.Context, d *Dispatcher, chatID s
 		}
 		return attachDetach(ctx, d, strconv.FormatInt(fromID, 10), f[0], target)
 	}
-	repo, prompt, cheap, ok := parseDispatch(rest)
+	repo, prompt, cheap, plan, ok := parseDispatch(rest)
 	if !ok {
-		return "usage: /mando [--cheap] <owner/repo> <prompt>"
+		return "usage: /mando [--cheap] [--plan] <owner/repo> <prompt>"
 	}
 	// Flat: Telegram has no native threading — several sessions interleave in one chat, so the workflow
 	// tags this session's follow-up messages with a compact "which session" prefix (see sessionTag).
-	sid, err := d.Dispatch(ctx, control.Conversation{Kind: "telegram", Channel: chatID, Flat: true}, repo, prompt, cheap)
+	sid, err := d.Dispatch(ctx, control.Conversation{Kind: "telegram", Channel: chatID, Flat: true}, repo, prompt, cheap, plan)
 	if err != nil {
 		return "failed to dispatch: " + err.Error()
 	}
@@ -176,18 +176,27 @@ func parseSlash(text, botUsername string) (cmd, rest string, ok bool) {
 	return name, strings.TrimSpace(tail), true
 }
 
-// parseDispatch splits a /mando body into repo + prompt, honouring a leading --cheap flag.
-func parseDispatch(rest string) (repo, prompt string, cheap, ok bool) {
+// parseDispatch splits a /mando body into repo + prompt, honouring leading --cheap and --plan flags in
+// any order. Shared by both connectors (Slack calls it too) so the flag surface stays identical.
+func parseDispatch(rest string) (repo, prompt string, cheap, plan, ok bool) {
 	rest = strings.TrimSpace(rest)
-	if r, found := strings.CutPrefix(rest, "--cheap "); found {
-		cheap, rest = true, strings.TrimSpace(r)
+	for {
+		if r, found := strings.CutPrefix(rest, "--cheap "); found {
+			cheap, rest = true, strings.TrimSpace(r)
+			continue
+		}
+		if r, found := strings.CutPrefix(rest, "--plan "); found {
+			plan, rest = true, strings.TrimSpace(r)
+			continue
+		}
+		break
 	}
 	repo, prompt, split := strings.Cut(rest, " ")
 	prompt = strings.TrimSpace(prompt)
 	if !split || !strings.Contains(repo, "/") || prompt == "" {
-		return "", "", false, false
+		return "", "", false, false, false
 	}
-	return repo, prompt, cheap, true
+	return repo, prompt, cheap, plan, true
 }
 
 // ---- Bot API ----

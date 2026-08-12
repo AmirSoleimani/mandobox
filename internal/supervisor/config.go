@@ -82,8 +82,10 @@ type RepoConfig struct {
 	HeadBranch string `json:"head_branch,omitempty"`
 }
 
-// TaskConfig carries the work to do. Mode is "initial" (first run: implement + open PR) or
-// "resume" (later round: apply instructions, push to the same branch, do NOT open a new PR).
+// TaskConfig carries the work to do. Mode is one of the Mode* constants: "initial" (first run:
+// implement + open PR), "resume" (later round: apply instructions, push to the same branch, do NOT
+// open a new PR), "plan" (explore + write a plan, never commit — pauses for human approval), or
+// "execute" (build the agreed plan autonomously, resuming the plan transcript, and open the PR).
 type TaskConfig struct {
 	Mode         string   `json:"mode"`
 	Prompt       string   `json:"prompt"`
@@ -120,6 +122,11 @@ type ClaudeConfig struct {
 const (
 	ModeInitial = "initial"
 	ModeResume  = "resume"
+	// ModePlan explores the repo and writes a plan (to the .mando/needs-input.md sentinel) without
+	// editing code; the turn pauses for human review. ModeExecute then builds the agreed plan
+	// autonomously — like ModeInitial but resuming the plan transcript — and opens the PR.
+	ModePlan    = "plan"
+	ModeExecute = "execute"
 )
 
 // ParseBootConfig decodes and validates the MMDS JSON.
@@ -139,9 +146,10 @@ func (c BootConfig) validate() error {
 		return fmt.Errorf("boot config: invalid session_id %q", c.SessionID)
 	}
 	switch c.Task.Mode {
-	case ModeInitial, ModeResume:
+	case ModeInitial, ModeResume, ModePlan, ModeExecute:
 	default:
-		return fmt.Errorf("boot config: task.mode must be %q or %q, got %q", ModeInitial, ModeResume, c.Task.Mode)
+		return fmt.Errorf("boot config: task.mode must be one of %q/%q/%q/%q, got %q",
+			ModeInitial, ModeResume, ModePlan, ModeExecute, c.Task.Mode)
 	}
 	for field, v := range map[string]string{
 		"repo.clone_url":   c.Repo.CloneURL,

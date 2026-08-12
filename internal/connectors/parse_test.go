@@ -30,21 +30,25 @@ func TestParseSlash(t *testing.T) {
 
 func TestParseDispatch(t *testing.T) {
 	cases := []struct {
-		rest, wantRepo, wantPrompt string
-		wantCheap, wantOK          bool
+		rest, wantRepo, wantPrompt      string
+		wantCheap, wantPlan, wantOK bool
 	}{
-		{"owner/repo do the thing", "owner/repo", "do the thing", false, true},
-		{"--cheap owner/repo fix the lint", "owner/repo", "fix the lint", true, true},
-		{"noslug do it", "", "", false, false},
-		{"owner/repo", "", "", false, false},
-		{"", "", "", false, false},
-		{"--cheap owner/repo", "", "", false, false},
+		{"owner/repo do the thing", "owner/repo", "do the thing", false, false, true},
+		{"--cheap owner/repo fix the lint", "owner/repo", "fix the lint", true, false, true},
+		{"--plan owner/repo add auth", "owner/repo", "add auth", false, true, true},
+		{"--cheap --plan owner/repo add auth", "owner/repo", "add auth", true, true, true},
+		{"--plan --cheap owner/repo add auth", "owner/repo", "add auth", true, true, true}, // order-independent
+		{"noslug do it", "", "", false, false, false},
+		{"owner/repo", "", "", false, false, false},
+		{"", "", "", false, false, false},
+		{"--cheap owner/repo", "", "", false, false, false},
+		{"--plan owner/repo", "", "", false, false, false}, // flag but no prompt
 	}
 	for _, c := range cases {
-		repo, prompt, cheap, ok := parseDispatch(c.rest)
-		if ok != c.wantOK || repo != c.wantRepo || prompt != c.wantPrompt || cheap != c.wantCheap {
-			t.Errorf("parseDispatch(%q) = (%q,%q,%v,%v), want (%q,%q,%v,%v)",
-				c.rest, repo, prompt, cheap, ok, c.wantRepo, c.wantPrompt, c.wantCheap, c.wantOK)
+		repo, prompt, cheap, plan, ok := parseDispatch(c.rest)
+		if ok != c.wantOK || repo != c.wantRepo || prompt != c.wantPrompt || cheap != c.wantCheap || plan != c.wantPlan {
+			t.Errorf("parseDispatch(%q) = (%q,%q,cheap=%v,plan=%v,%v), want (%q,%q,cheap=%v,plan=%v,%v)",
+				c.rest, repo, prompt, cheap, plan, ok, c.wantRepo, c.wantPrompt, c.wantCheap, c.wantPlan, c.wantOK)
 		}
 	}
 }

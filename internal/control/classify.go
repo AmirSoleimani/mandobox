@@ -20,66 +20,24 @@ const classifySystem = `You route messages sent to an AI coding assistant that i
 - MESSAGE — anything else: a coding request, a question, feedback, or discussion.
 Reply with ONLY one word: ATTACH, DETACH, or MESSAGE.`
 
+const planDecisionSystem = `An AI coding assistant has proposed a PLAN for a task and is discussing it ` +
+	`with a human reviewer before implementing anything. Classify the reviewer's latest message into ` +
+	`exactly one word:
+- PROCEED — the reviewer approves the plan and wants the assistant to start implementing it NOW (e.g. ` +
+	`"go", "looks good", "lgtm", "ship it", "yes do it", "sounds good, build it", "go ahead and implement").
+- DISCUSS — anything else: a question, a requested change or refinement to the plan, a concern, a request ` +
+	`for more detail, or general discussion. This means keep planning — do NOT start building yet.
+When in doubt, choose DISCUSS: never start building on an ambiguous message.
+Reply with ONLY one word: PROCEED or DISCUSS.`
+
 // ClassifyIntent decides whether a natural-language reply is a request to get into the VM (ATTACH),
-// to leave it (DETACH), or a normal instruction (MESSAGE). It calls the cheap model through the same
-// host gateway the guests use (which injects the key), so no extra secret is needed. Fail-safe:
-// any error classifies as "message" so the reply still reaches the agent.
+// to leave it (DETACH), or a normal instruction (MESSAGE). Fail-safe: any error classifies as
+// "message" so the reply still reaches the agent.
 func (a *Activities) ClassifyIntent(ctx context.Context, message string) (string, error) {
 	if strings.TrimSpace(message) == "" {
 		return "message", nil
 	}
-	// Route through the active provider, same as the agent: subscription → Anthropic directly on the
-	// OAuth token; API-key providers → the gateway (which injects the real key, so the placeholder
-	// bearer is fine). Fail-safe: any error classifies as "message" so the reply still reaches the agent.
-	baseURL, token, model := a.resolveProvider().helperLLM(a.GatewayURL)
-	if baseURL == "" || model == "" {
-		return "message", nil
-	}
-	body, err := json.Marshal(map[string]any{
-		"model":      model,
-		"max_tokens": 5,
-		"system":     classifySystem,
-		"messages":   []map[string]any{{"role": "user", "content": message}},
-	})
-	if err != nil {
-		return "message", nil
-	}
-	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(cctx, http.MethodPost,
-		strings.TrimRight(baseURL, "/")+"/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		return "message", nil
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("content-type", "application/json")
-
-	resp, err := (&http.Client{Timeout: 25 * time.Second}).Do(req)
-	if err != nil {
-		return "message", nil
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode/100 != 2 {
-		return "message", nil
-	}
-	var out struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return "message", nil
-	}
-	var t string
-	for _, c := range out.Content {
-		if c.Type == "text" {
-			t += c.Text
-		}
-	}
-	t = strings.ToLower(t)
+	t := a.helperClassify(ctx, classifySystem, message)
 	switch {
 	case strings.Contains(t, "attach"):
 		return "attach", nil
@@ -88,4 +46,82 @@ func (a *Activities) ClassifyIntent(ctx context.Context, message string) (string
 	default:
 		return "message", nil
 	}
+}
+
+// ClassifyPlanDecision decides whether the reviewer's reply during plan discussion means "start building"
+// (PROCEED) or "keep discussing / refine the plan" (DISCUSS). Fail-safe to "discuss": an ambiguous reply —
+// or any error — must never auto-launch a build. See docs on plan mode.
+func (a *Activities) ClassifyPlanDecision(ctx context.Context, message string) (string, error) {
+	if strings.TrimSpace(message) == "" {
+		return "discuss", nil
+	}
+	return planDecisionFromText(a.helperClassify(ctx, planDecisionSystem, message)), nil
+}
+
+// planDecisionFromText maps the model's reply to the decision. Fail-safe: only a reply whose FIRST word
+// is "proceed" starts a build; every other reply (including a negation like "do not proceed", and anything
+// unrecognized or empty) stays in discussion. First-word (not substring) so the fail-safe can't open on a
+// negated "proceed" — the system prompt already asks for a single word.
+func planDecisionFromText(t string) string {
+	if fields := strings.Fields(strings.ToLower(t)); len(fields) > 0 && strings.HasPrefix(fields[0], "proceed") {
+		return "proceed"
+	}
+	return "discuss"
+}
+
+// helperClassify sends a single-word classification request to the active provider's cheap model and
+// returns the model's lowercased text reply, or "" on any error (callers apply their own fail-safe
+// default). Route: subscription → Anthropic directly on the OAuth token; API-key providers → the gateway
+// (which injects the real key, so the placeholder bearer is fine) — the same path the agent uses, so no
+// extra secret is needed. Unexported so it is not mistaken for a Temporal activity (see register_test.go).
+func (a *Activities) helperClassify(ctx context.Context, system, message string) string {
+	baseURL, token, model := a.resolveProvider().helperLLM(a.GatewayURL)
+	if baseURL == "" || model == "" {
+		return ""
+	}
+	body, err := json.Marshal(map[string]any{
+		"model":      model,
+		"max_tokens": 5,
+		"system":     system,
+		"messages":   []map[string]any{{"role": "user", "content": message}},
+	})
+	if err != nil {
+		return ""
+	}
+	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodPost,
+		strings.TrimRight(baseURL, "/")+"/v1/messages", bytes.NewReader(body))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("content-type", "application/json")
+
+	resp, err := (&http.Client{Timeout: 25 * time.Second}).Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode/100 != 2 {
+		return ""
+	}
+	var out struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return ""
+	}
+	var t string
+	for _, c := range out.Content {
+		if c.Type == "text" {
+			t += c.Text
+		}
+	}
+	return strings.ToLower(t)
 }
