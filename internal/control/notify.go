@@ -15,6 +15,11 @@ type Conversation struct {
 	Kind    string `json:"kind"`    // "slack" | "telegram" | …; "" is treated as DefaultChatKind
 	Channel string `json:"channel"` // connector channel/chat id; "" → the connector's default channel
 	Thread  string `json:"thread"`  // connector thread id; set by the first Post, replies target it
+	// Flat marks a connector with no native threading (e.g. Telegram: every message lands in one flat
+	// chat), where several sessions interleave. The workflow prefixes such a session's follow-up messages
+	// with a compact session tag so they stay distinguishable. Threaded connectors (Slack) leave it false
+	// — their threads already group a session's messages, and their output is byte-locked by golden tests.
+	Flat bool `json:"flat,omitempty"`
 }
 
 // DefaultChatKind is the connector assumed when a dispatch names none — preserving the historical

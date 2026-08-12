@@ -96,6 +96,7 @@ type WorkflowInput struct {
 // State is the queryable workflow state block. Returned by the `status` query.
 type State struct {
 	SessionID           string   `json:"session_id"`
+	Title               string   `json:"title,omitempty"` // short, emphasis-safe task title for the flat-chat session tag
 	Repo                string   `json:"repo"`
 	BaseBranch          string   `json:"base_branch"`
 	HeadBranch          string   `json:"head_branch"`
