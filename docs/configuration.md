@@ -92,6 +92,11 @@ resources: large                # named profile, clamped to max_profile
 keep_alive: 2h                  # clamped to hard_ttl
 review: { max_rounds: 3, auto_fix_ci: true, draft_pr: true }
 
+# Visual self-verification — how to bring up a preview so the agent can screenshot and check a UI
+# change before opening the PR (see docs/preview.md). Omit to let the agent auto-detect from
+# package.json; prefer a Storybook story over the whole app for reliable rendering.
+preview: { start: "npm run dev", port: 3000, path: "/" }
+
 # Agent behavior — author-controlled (runs in the sandboxed VM; output is human-reviewed)
 instructions: |
   Rust CLI. Small, focused commits. Run `cargo test` && `cargo clippy` before opening a PR.

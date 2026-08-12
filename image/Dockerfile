@@ -19,6 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/fc-supervisor ./cmd/fc-s
 FROM debian:bookworm-slim AS rootfs
 ARG NODE_MAJOR=22
 ARG CLAUDE_CODE_VERSION=2.1.220
+ARG PLAYWRIGHT_VERSION=1.62.1
 ARG GH_VERSION=2.96.0
 ARG GOLANGCI_LINT_VERSION=2.12.2
 ARG GO_VERSION=1.25.12
@@ -39,6 +40,18 @@ RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
 
 # Claude Code CLI, pinned.
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && npm cache clean --force
+
+# Headless browser (Playwright + Chromium) for visual self-verification: the agent screenshots its own
+# running change and reads the PNG back to self-correct before opening a PR (docs/preview.md). Chromium
+# runs in-guest against localhost, so no egress is involved. Pinned like every other tool; mando-shot is
+# the one-command wrapper the agent calls. The browser is baked at PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright.
+COPY image/assets/mando-shot.js /opt/mando-shot/mando-shot.js
+RUN cd /opt/mando-shot && npm init -y >/dev/null \
+    && npm install "playwright@${PLAYWRIGHT_VERSION}" \
+    && PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright node_modules/.bin/playwright install --with-deps chromium \
+    && ln -sf /opt/mando-shot/mando-shot.js /usr/local/bin/mando-shot \
+    && chmod +x /opt/mando-shot/mando-shot.js \
+    && npm cache clean --force
 
 # GitHub CLI, pinned.
 RUN curl -fsSL -o /tmp/gh.tgz \
@@ -72,6 +85,6 @@ ENV GOMODCACHE=/workspace/.cache/go/mod \
     npm_config_cache=/workspace/.cache/npm
 
 # Record the pinned versions for provenance.
-RUN printf 'claude-code=%s\nnode_major=%s\ngh=%s\ngo=%s\ngolangci-lint=%s\n' \
-      "${CLAUDE_CODE_VERSION}" "${NODE_MAJOR}" "${GH_VERSION}" "${GO_VERSION}" "${GOLANGCI_LINT_VERSION}" \
+RUN printf 'claude-code=%s\nnode_major=%s\nplaywright=%s\ngh=%s\ngo=%s\ngolangci-lint=%s\n' \
+      "${CLAUDE_CODE_VERSION}" "${NODE_MAJOR}" "${PLAYWRIGHT_VERSION}" "${GH_VERSION}" "${GO_VERSION}" "${GOLANGCI_LINT_VERSION}" \
       > /etc/fleet-image-versions

@@ -455,7 +455,7 @@ const autonomousPreamble = "You are running non-interactively, with no human ava
 	"explain why in your summary rather than following a bad instruction literally. Do NOT run " +
 	"git commit, git push, or gh, and do NOT open a pull request: committing, pushing, and the " +
 	"PR are handled automatically once you finish. Just make the file changes. " +
-	artifactHygiene + " " + selfReview + "\n\n"
+	artifactHygiene + " " + selfReview + " " + visualCheck + "\n\n"
 
 // selfReview makes every code change arrive with its own evidence, so a reviewer can trust it
 // cheaply instead of re-deriving what it does and whether it works. The agent verifies its own
@@ -487,6 +487,22 @@ const artifactHygiene = "Commit only source and intended files. If your work pro
 	"gets committed. Add or update a .gitignore to exclude them (create one if the repo has none), " +
 	"and delete any that already slipped in."
 
+// visualCheck gives the agent eyes: for a change with a visible browser effect it renders the result
+// with a real headless browser (mando-shot, baked into the image) and reviews the screenshot, so
+// "looks right in code, broken in render" gets caught before the PR. Conditional and fail-soft — a
+// non-bootable app never blocks the change. See docs/preview.md.
+const visualCheck = "If your change has a visible effect in a browser (UI, styling, layout, a page or " +
+	"component), verify it visually before finishing. Bring up a preview — use the preview: block in " +
+	".mandobox.yml if the repo has one (its start command, port, and path); otherwise infer the " +
+	"dev-server or Storybook command and port from package.json — then capture the relevant page with " +
+	"`mando-shot <url>` (a preinstalled command; run `mando-shot --help`) and READ the resulting PNG to " +
+	"check the change you were asked for is actually visible and nothing is obviously broken (overlap, " +
+	"cut-off text, broken layout). Fix and re-capture, at most about three times. Prefer rendering a " +
+	"single component or Storybook story over booting the whole app when you can — it is faster and more " +
+	"reliable. If you genuinely cannot get a meaningful render (it needs a backend, secrets, seed data, " +
+	"or a login), say so plainly in your summary and move on — never block the change on it. Keep the " +
+	"screenshots out of the commit (put your capture directory, for example .mando/, in .gitignore)."
+
 // DefaultAutonomousPreamble / DefaultCollaboratePreamble expose the built-in preambles so the worker
 // can materialize them to disk for the dashboard (which shows them as the editable default / reset
 // baseline). They are the canonical source; an operator override replaces them per box.
@@ -509,7 +525,7 @@ const collaboratePreamble = "You are collaborating on an open pull request with 
 	"editing files; if you think it is wrong or there is a better path, do that and explain, or ask " +
 	"one sharp clarifying question. Your previous work is already in this workspace on its branch. " +
 	"Do NOT run git commit, git push, or gh, and do NOT open a pull request — that is handled for " +
-	"you. " + artifactHygiene + " " + selfReview + " Your final message is posted straight back to " +
+	"you. " + artifactHygiene + " " + selfReview + " " + visualCheck + " Your final message is posted straight back to " +
 	"the reviewer as your reply, so address them directly.\n\n"
 
 // resumePrompt assembles a resume turn from the reviewer's messages.

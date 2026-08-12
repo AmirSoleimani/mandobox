@@ -8,9 +8,10 @@
 # Versions mirror image/Dockerfile — keep them in sync.
 set -euo pipefail
 
+HERE="$(cd "$(dirname "$0")" && pwd)"
 SUPERVISOR_BIN="${SUPERVISOR_BIN:?set SUPERVISOR_BIN to the prebuilt fc-supervisor binary}"
 OUT_DIR="${OUT_DIR:-/var/lib/fleet/images}"
-SIZE_MB="${SIZE_MB:-2048}"
+SIZE_MB="${SIZE_MB:-3072}"  # ~2–3GB (headroom for the baked-in Chromium/Playwright)
 # Build a rootfs matching the HOST distro so mmdebstrap uses the host's own apt keyring
 # (a Debian rootfs on an Ubuntu host fails signature verification — Ubuntu's apt does not
 # trust Debian's signing keys, and vice versa). The guest being Ubuntu vs Debian makes no
@@ -31,6 +32,7 @@ case "${ID:-debian}" in
 esac
 
 NODE_MAJOR="${NODE_MAJOR:-22}"
+PLAYWRIGHT_VERSION="${PLAYWRIGHT_VERSION:-1.62.1}"  # headless browser for visual self-verification
 CLAUDE_CODE_VERSION="${CLAUDE_CODE_VERSION:-2.1.220}"
 # Codex CLI is baked into the image by default so switching harnesses is a pure config toggle
 # (mandobox.yml agents_allowed) with no image rebuild — "available, not enabled". Set CODEX_VERSION=""
@@ -71,6 +73,10 @@ for fs in proc sys dev; do
   mounted="$ROOTFS/$fs $mounted"
 done
 
+# mando-shot (visual self-verification) is a repo-local asset; drop it in before the chroot installs
+# its Playwright/Chromium runtime around it.
+install -D -m 0755 "$HERE/assets/mando-shot.js" "$ROOTFS/opt/mando-shot/mando-shot.js"
+
 cat >"$ROOTFS/tmp/install.sh" <<INSTALL
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -80,6 +86,12 @@ ln -sf "\$(command -v fdfind)" /usr/local/bin/fd
 curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
 apt-get install -y --no-install-recommends nodejs
 npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+# Headless browser (Playwright + Chromium) for visual self-verification (docs/preview.md): the agent
+# screenshots its own running change and reads the PNG back. In-guest vs localhost only — no egress.
+( cd /opt/mando-shot && npm init -y >/dev/null && npm install "playwright@${PLAYWRIGHT_VERSION}" )
+PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright /opt/mando-shot/node_modules/.bin/playwright install --with-deps chromium
+ln -sf /opt/mando-shot/mando-shot.js /usr/local/bin/mando-shot
 # Optional: OpenAI Codex CLI as a second harness (only when CODEX_VERSION is set). Non-fatal so a
 # bad/unavailable version never breaks the image build.
 if [ -n "${CODEX_VERSION}" ]; then
@@ -112,8 +124,8 @@ python3 -m venv /opt/pytools
 ln -sf /opt/pytools/bin/ruff /usr/local/bin/ruff
 
 # Provenance + cleanup.
-printf 'claude-code=%s\nnode_major=%s\ngh=%s\ngo=%s\ngolangci-lint=%s\n' \
-  "${CLAUDE_CODE_VERSION}" "${NODE_MAJOR}" "${GH_VERSION}" "${GO_VERSION}" "${GOLANGCI_LINT_VERSION}" \
+printf 'claude-code=%s\nnode_major=%s\nplaywright=%s\ngh=%s\ngo=%s\ngolangci-lint=%s\n' \
+  "${CLAUDE_CODE_VERSION}" "${NODE_MAJOR}" "${PLAYWRIGHT_VERSION}" "${GH_VERSION}" "${GO_VERSION}" "${GOLANGCI_LINT_VERSION}" \
   > /etc/fleet-image-versions
 apt-get clean
 rm -rf /var/lib/apt/lists/* /tmp/*
