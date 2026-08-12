@@ -136,11 +136,7 @@ func (t *telegramNotifier) PostImage(ctx context.Context, conv Conversation, cap
 		return err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	client := t.client
-	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
-	}
-	resp, err := client.Do(req)
+	resp, err := uploadHTTPClient().Do(req) // fresh, non-pooled connection — see uploadHTTPClient
 	if err != nil {
 		return err
 	}
