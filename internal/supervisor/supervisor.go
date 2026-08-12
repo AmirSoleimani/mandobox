@@ -3,11 +3,13 @@ package supervisor
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -177,6 +179,7 @@ func (s *Supervisor) shouldOpenPR() bool {
 // turn runs one agent turn and finalizes it (commit/push; open the PR when shouldOpenPR and the
 // turn changed something). A failure publishes agent_failed and ends the session.
 func (s *Supervisor) turn(ctx context.Context, spec AgentSpec, openPR bool) error {
+	turnStart := time.Now() // to scope the screenshot harvest to captures made during THIS turn
 	res, err := s.deps.Agent.Run(ctx, spec, func(line []byte) {
 		if err := s.deps.Bus.Log(line); err != nil {
 			s.deps.Log.Warn("publish log line failed", "err", err)
@@ -186,7 +189,7 @@ func (s *Supervisor) turn(ctx context.Context, spec AgentSpec, openPR bool) erro
 		return s.failf(err, "agent")
 	}
 	s.persistClaudeSession(res.SessionID)
-	return s.finalizeTurn(ctx, res, openPR)
+	return s.finalizeTurn(ctx, res, openPR, turnStart)
 }
 
 // firstTurnSpec builds the first turn's spec from the launch mode.
@@ -232,11 +235,11 @@ func (s *Supervisor) resumeSpec(instructions, queued []string) AgentSpec {
 
 // finalizeTurn commits, pushes, and reports the turn. openPR opens the PR (first initial turn);
 // otherwise it is a push to the existing branch.
-func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool) error {
+func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool, turnStart time.Time) error {
 	tokens := res.Usage.InputTokens + res.Usage.OutputTokens
 	// The agent's final visual-verification screenshot (if any), to share in the chat thread. Only
 	// attached to a code-changing outcome below — a no-op turn doesn't carry one.
-	shot := s.harvestScreenshot()
+	shot := s.harvestScreenshot(turnStart)
 
 	// Look at what changed before committing: a clean tree is the no-op turn, and the diff is what
 	// lets a cheap model write a real commit message instead of a fixed placeholder.
@@ -274,14 +277,22 @@ func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool) 
 		Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens, Screenshot: shot})
 }
 
-// harvestScreenshot returns the most-recent PNG the agent left in the visual-verification capture
+// harvestScreenshot returns the most-recent PNG the agent captured THIS turn in the visual-verification
 // directory (.mando/ under the repo), so the control plane can share it in the chat thread. The agent
 // keeps that directory git-ignored (visualCheck preamble), so at finalize the PNGs are present on disk
-// but uncommitted. Best-effort: returns nil on any problem (no directory, no PNGs, oversize, read
-// error) — sharing a screenshot must never affect the turn's outcome. Capped so it stays well under
-// the NATS max_payload even after base64.
-func (s *Supervisor) harvestScreenshot() []byte {
-	const maxScreenshotBytes = 3 << 20 // 3 MiB PNG (~4 MiB base64, under the 8 MiB NATS max_payload)
+// but uncommitted. Best-effort: returns nil on any problem (no directory, no fresh PNG, oversize, read
+// error) — sharing a screenshot must never affect the turn's outcome.
+//
+// turnStart scopes the harvest to captures made during this turn, so a resume turn that took no new
+// screenshot doesn't re-post a stale one from an earlier turn.
+//
+// The cap is sized against the TIGHTEST downstream hop: the PNG rides Event.Screenshot into the
+// RunAgentPhase activity's result, which Temporal persists in workflow history under a default 2 MiB
+// blob-size limit (base64 inflates ~4/3). A 1 MiB PNG (~1.4 MiB base64) leaves headroom for the rest of
+// the result; anything larger is dropped rather than risk failing the turn's real outcome. (This is far
+// under the 8 MiB NATS max_payload the event also crosses.)
+func (s *Supervisor) harvestScreenshot(turnStart time.Time) []byte {
+	const maxScreenshotBytes = 1 << 20 // 1 MiB PNG; base64 ~1.4 MiB, under Temporal's 2 MiB blob limit
 	dir := filepath.Join(s.repoDir, ".mando")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -290,11 +301,12 @@ func (s *Supervisor) harvestScreenshot() []byte {
 	var newestName string
 	var newestMod time.Time
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".png") {
+		// Regular files only (no symlink deref via the dirent type), a .png, and produced this turn.
+		if !e.Type().IsRegular() || !strings.HasSuffix(strings.ToLower(e.Name()), ".png") {
 			continue
 		}
 		info, err := e.Info()
-		if err != nil {
+		if err != nil || !info.ModTime().After(turnStart) {
 			continue
 		}
 		if newestName == "" || info.ModTime().After(newestMod) {
@@ -304,16 +316,23 @@ func (s *Supervisor) harvestScreenshot() []byte {
 	if newestName == "" {
 		return nil
 	}
-	path := filepath.Join(dir, newestName)
-	info, err := os.Stat(path)
-	if err != nil || info.Size() == 0 {
+	// Open with O_NOFOLLOW and validate + read the SAME descriptor, so a symlink swapped in after the
+	// dirent check (TOCTOU) can't redirect the read at a token file: O_NOFOLLOW refuses a symlink, and
+	// fstat/read operate on the opened regular file, never a re-resolved path.
+	f, err := os.OpenFile(filepath.Join(dir, newestName), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
 		return nil
 	}
 	if info.Size() > maxScreenshotBytes {
-		s.deps.Log.Info("screenshot too large to share", "path", path, "bytes", info.Size())
+		s.deps.Log.Info("screenshot too large to share", "name", newestName, "bytes", info.Size())
 		return nil
 	}
-	b, err := os.ReadFile(path)
+	b, err := io.ReadAll(io.LimitReader(f, maxScreenshotBytes)) // bound the read to the bytes, not just the stat
 	if err != nil {
 		return nil
 	}
