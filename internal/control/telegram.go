@@ -146,15 +146,15 @@ func (t *telegramNotifier) PostImage(ctx context.Context, conv Conversation, cap
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("telegram sendPhoto: http %s", resp.Status)
-	}
+	// Telegram's error responses (4xx) carry the actionable detail in the JSON "description" (e.g. "Bad
+	// Request: chat not found", caption too long), so parse it before the status check and surface it.
 	var out struct {
 		OK          bool   `json:"ok"`
 		Description string `json:"description"`
 	}
-	if err := json.Unmarshal(data, &out); err != nil {
-		return err
+	_ = json.Unmarshal(data, &out)
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("telegram sendPhoto: http %s: %s", resp.Status, out.Description)
 	}
 	if !out.OK {
 		return fmt.Errorf("telegram sendPhoto: %s", out.Description)
