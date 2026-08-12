@@ -79,6 +79,14 @@ func (d *Dispatcher) FindByConversation(ctx context.Context, key string) (string
 		control.SAConversation, strconv.Quote(key)))
 }
 
+// FindByChatMessage returns the running session that posted the chat message identified by token
+// ("<kind>:<channel>:<message_id>"). It lets a connector route a reply-to-message to the exact session
+// that posted it, so one chat can host several sessions. Not-found → error (caller falls back).
+func (d *Dispatcher) FindByChatMessage(ctx context.Context, token string) (string, error) {
+	return d.query(ctx, fmt.Sprintf(`WorkflowType='PRWorkflow' AND %s=%s AND ExecutionStatus='Running'`,
+		control.SAChatMsgIDs, strconv.Quote(token)))
+}
+
 // FindByTarget resolves a PR number or a session id (s_…) to a running workflow id.
 func (d *Dispatcher) FindByTarget(ctx context.Context, target string) (string, error) {
 	if strings.HasPrefix(target, "s_") {

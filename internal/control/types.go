@@ -27,6 +27,10 @@ const (
 	SAPRNumber    = "pr_number"
 	SAReviewRound = "review_round"
 	SAConversation = "conversation" // "<kind>:<thread>" → workflow, so any connector routes chat replies
+	// SAChatMsgIDs holds "<kind>:<channel>:<message_id>" tokens for the chat messages a session posted,
+	// so a connector can route a reply-to-message back to THAT session even when several sessions share
+	// one chat (KeywordList; membership query). Recorded only for sessions started with reply-routing on.
+	SAChatMsgIDs = "chat_msg_ids"
 )
 
 // Policy knobs — workflow input, baked nowhere else. Defaults applied in the
@@ -106,6 +110,10 @@ type State struct {
 	// Conversation records the chat surface (connector + channel + thread) this session posts to,
 	// set once the root message opens the thread. Empty for a channel-less (dashboard/CLI) session.
 	Conversation Conversation `json:"conversation"`
+	// ChatMsgIDs are "<kind>:<channel>:<message_id>" tokens for messages this session posted, so a reply
+	// to one routes back here (a chat may host several sessions). Capped to the most recent few dozen;
+	// populated only when reply-routing is enabled for the session (GetVersion-gated).
+	ChatMsgIDs []string `json:"chat_msg_ids,omitempty"`
 	Phase        string       `json:"phase"` // human-readable current step
 	// CostCeilingReached latches once cumulative spend hits Policy.CostCeilingUSD: further agent turns
 	// are paused (feedback still queues) so untrusted PR/Slack input can't drive unbounded LLM spend.
