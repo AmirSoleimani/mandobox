@@ -538,15 +538,19 @@ func recordChatMessage(ctx workflow.Context, st *State, msgID string) {
 }
 
 // postScreenshot shares the agent's visual-verification capture into the session thread. Best-effort:
-// the PostImage activity swallows delivery errors, and this ignores the result — a missing screenshot
-// never affects the run.
+// the PostImage activity swallows delivery errors — a missing screenshot never affects the run. The
+// posted message's id is recorded (recordChatMessage) so a reply to the screenshot steers this session,
+// just like a reply to a text message. Replay-safe: a pre-change history has no result payload for the
+// activity, so msgID decodes to "" and recordChatMessage no-ops — matching the old command stream.
 func postScreenshot(ctx workflow.Context, st *State, png []byte, caption string) {
 	if st.Conversation.Thread == "" || len(png) == 0 {
 		return
 	}
 	var a *Activities
+	var msgID string
 	_ = workflow.ExecuteActivity(slackCtx(ctx), a.PostImage,
-		PostImageParams{Conversation: st.Conversation, PNG: png, Caption: caption, Filename: "preview.png"}).Get(ctx, nil)
+		PostImageParams{Conversation: st.Conversation, PNG: png, Caption: caption, Filename: "preview.png"}).Get(ctx, &msgID)
+	recordChatMessage(ctx, st, msgID)
 }
 
 // reportPhase renders a turn as conversation: the agent's own words, plus a small footer noting
