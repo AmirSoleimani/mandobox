@@ -544,7 +544,9 @@ const artifactHygiene = "Commit only source and intended files. If your work pro
 const visualCheck = "If your change has a visible effect in a browser (UI, styling, layout, a page or " +
 	"component), verify it visually before finishing. Bring up a preview — use the preview: block in " +
 	".mandobox.yml if the repo has one (its start command, port, and path); otherwise infer the " +
-	"dev-server or Storybook command and port from package.json — then capture the relevant page with " +
+	"dev-server or Storybook command and port from package.json (install dependencies WITHOUT modifying " +
+	"the lockfile — `npm ci`, or `npm install --no-save` — so merely bringing up a preview never dirties " +
+	"the tree) — then capture the relevant page with " +
 	"`mando-shot <url>` (a preinstalled command; run `mando-shot --help`) and READ the resulting PNG to " +
 	"check the change you were asked for is actually visible and nothing is obviously broken (overlap, " +
 	"cut-off text, broken layout). Fix and re-capture, at most about three times. Prefer rendering a " +
