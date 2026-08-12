@@ -503,6 +503,18 @@ func notify(ctx workflow.Context, st *State, text string) {
 		PostMessageParams{Conversation: st.Conversation, Text: text}).Get(ctx, nil)
 }
 
+// postScreenshot shares the agent's visual-verification capture into the session thread. Best-effort:
+// the PostImage activity swallows delivery errors, and this ignores the result — a missing screenshot
+// never affects the run.
+func postScreenshot(ctx workflow.Context, st *State, png []byte, caption string) {
+	if st.Conversation.Thread == "" || len(png) == 0 {
+		return
+	}
+	var a *Activities
+	_ = workflow.ExecuteActivity(slackCtx(ctx), a.PostImage,
+		PostImageParams{Conversation: st.Conversation, PNG: png, Caption: caption, Filename: "preview.png"}).Get(ctx, nil)
+}
+
 // reportPhase renders a turn as conversation: the agent's own words, plus a small footer noting
 // a PR/push when it actually changed code. This is what makes a reply feel answered — a
 // question gets an explanation, a change gets a summary — rather than a bare "no changes".
@@ -553,6 +565,14 @@ func reportPhase(ctx workflow.Context, st *State, res PhaseResult, fromPR bool) 
 		notify(ctx, st, fmt.Sprintf(":x: Run failed at *%s*: %s", res.Stage, res.Error))
 	case supervisor.EventNeedsInput:
 		notify(ctx, st, fmt.Sprintf(":grey_question: *Agent needs input*: %s\n_Reply in this thread to continue._", toSlackMrkdwn(strings.TrimSpace(res.Question))))
+	}
+	// Share the agent's rendered preview into the thread, after the status line above. Gated by
+	// GetVersion so an in-flight workflow (whose history predates this feature) replays without the new
+	// activity and doesn't diverge. res.Screenshot is only set on code-changing turns.
+	if workflow.GetVersion(ctx, "screenshot-share", workflow.DefaultVersion, 1) >= 1 && len(res.Screenshot) > 0 {
+		// A literal emoji, not a colon-shortcode: the caption is delivered verbatim (Slack
+		// initial_comment / Telegram photo caption), not through the mrkdwn→HTML renderer.
+		postScreenshot(ctx, st, res.Screenshot, "📸 Rendered preview of this change")
 	}
 }
 

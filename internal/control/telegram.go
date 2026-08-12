@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"time"
@@ -94,6 +95,69 @@ func (t *telegramNotifier) Update(ctx context.Context, conv Conversation, messag
 	}
 	if !out.OK {
 		return fmt.Errorf("telegram editMessageText: %s", out.Description)
+	}
+	return nil
+}
+
+// PostImage sends a PNG into the chat via the Bot API sendPhoto (multipart upload). The caption is
+// plain text (no parse_mode) so it needs no escaping. Telegram routing is chat-scoped, so chat_id
+// already targets the session's conversation.
+func (t *telegramNotifier) PostImage(ctx context.Context, conv Conversation, caption string, png []byte, filename string) error {
+	if t.token == "" || len(png) == 0 {
+		return nil
+	}
+	chat := conv.Channel
+	if chat == "" {
+		chat = t.defaultChat
+	}
+	if filename == "" {
+		filename = "preview.png"
+	}
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("chat_id", chat)
+	if caption != "" {
+		_ = mw.WriteField("caption", caption)
+	}
+	fw, err := mw.CreateFormFile("photo", filename)
+	if err != nil {
+		return err
+	}
+	if _, err := fw.Write(png); err != nil {
+		return err
+	}
+	if err := mw.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://api.telegram.org/bot"+t.token+"/sendPhoto", &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	client := t.client
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("telegram sendPhoto: http %s", resp.Status)
+	}
+	var out struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return err
+	}
+	if !out.OK {
+		return fmt.Errorf("telegram sendPhoto: %s", out.Description)
 	}
 	return nil
 }

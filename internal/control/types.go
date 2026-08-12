@@ -233,6 +233,9 @@ type PhaseResult struct {
 	Reply     string  `json:"reply"` // the agent's own words this turn, for the thread
 	CostUSD   float64 `json:"cost_usd"`
 	Tokens    int     `json:"tokens"`
+	// Screenshot is the agent's final visual-verification capture (a PNG), carried up from the guest so
+	// the workflow can post it into the chat thread. Empty on turns with no capture.
+	Screenshot []byte `json:"screenshot,omitempty"`
 }
 
 // DeliverParams publishes a command to a running guest over NATS.

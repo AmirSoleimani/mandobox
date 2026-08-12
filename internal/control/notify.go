@@ -1,6 +1,10 @@
 package control
 
-import "context"
+import (
+	"context"
+
+	"go.temporal.io/sdk/activity"
+)
 
 // Conversation identifies the chat surface a session talks to: which connector (Kind), which channel,
 // and — once the root message is posted — which thread its replies land in. This is the single seam a
@@ -52,6 +56,9 @@ type Notifier interface {
 	Post(ctx context.Context, conv Conversation, text string) (NotifyResult, error)
 	// Update edits a previously posted message in place (best-effort; connectors that can't may no-op).
 	Update(ctx context.Context, conv Conversation, messageID, text string) error
+	// PostImage uploads a PNG into conv's thread with an optional plain-text caption. Best-effort: a
+	// connector that can't upload images (missing scope, unsupported, empty token) returns nil.
+	PostImage(ctx context.Context, conv Conversation, caption string, png []byte, filename string) error
 }
 
 // notifierFor returns the Notifier for a connector kind, or nil when it isn't registered — i.e. the
@@ -102,4 +109,27 @@ func (a *Activities) UpdateMessage(ctx context.Context, p UpdateMessageParams) e
 		return nil
 	}
 	return n.Update(ctx, p.Conversation, p.MessageID, p.Text)
+}
+
+// PostImageParams drives the image-posting activity: a PNG (base64 over the wire) posted into the
+// session's chat thread with an optional caption.
+type PostImageParams struct {
+	Conversation Conversation `json:"conversation"`
+	Caption      string       `json:"caption"`
+	PNG          []byte       `json:"png"`
+	Filename     string       `json:"filename"`
+}
+
+// PostImage posts an image into the session's conversation. It is BEST-EFFORT: a missing screenshot
+// must never fail or retry the workflow, so any error (unconfigured connector, missing Slack scope,
+// upload failure) is logged and swallowed — the activity always succeeds.
+func (a *Activities) PostImage(ctx context.Context, p PostImageParams) error {
+	n := a.notifierFor(p.Conversation.resolvedKind())
+	if n == nil || len(p.PNG) == 0 {
+		return nil
+	}
+	if err := n.PostImage(ctx, p.Conversation, p.Caption, p.PNG, p.Filename); err != nil {
+		activity.GetLogger(ctx).Warn("post image failed (best-effort, ignored)", "kind", p.Conversation.resolvedKind(), "err", err)
+	}
+	return nil
 }
