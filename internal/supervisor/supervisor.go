@@ -277,59 +277,41 @@ func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool, 
 		Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens, Screenshot: shot})
 }
 
-// harvestScreenshot returns the most-recent PNG the agent captured THIS turn in the visual-verification
-// directory (.mando/ under the repo), so the control plane can share it in the chat thread. The agent
-// keeps that directory git-ignored (visualCheck preamble), so at finalize the PNGs are present on disk
-// but uncommitted. Best-effort: returns nil on any problem (no directory, no fresh PNG, oversize, read
-// error) — sharing a screenshot must never affect the turn's outcome.
+// shareScreenshotName is the ONE file the agent writes to explicitly opt a screenshot into being shared
+// with the reviewer (visualCheck preamble). Self-verification captures under other names in .mando/ are
+// the agent's own and are never posted — sharing is on-demand (the reviewer asked, or the agent judged
+// the result worth showing), not automatic on every visual change.
+const shareScreenshotName = "share.png"
+
+// harvestScreenshot returns the screenshot the agent chose to share THIS turn — the file
+// .mando/share.png, if it was (re)written during this turn. The agent keeps .mando/ git-ignored
+// (visualCheck preamble), so it's present on disk but uncommitted at finalize. Best-effort: returns nil
+// on any problem (not shared, stale, oversize, symlink, read error) — sharing must never affect the
+// turn's outcome.
 //
-// turnStart scopes the harvest to captures made during this turn, so a resume turn that took no new
-// screenshot doesn't re-post a stale one from an earlier turn.
+// turnStart scopes it to this turn, so a share.png left over from an earlier turn is not re-posted; the
+// agent overwrites it, so a shared screenshot always reflects the current state.
 //
 // The cap is sized against the TIGHTEST downstream hop: the PNG rides Event.Screenshot into the
 // RunAgentPhase activity's result, which Temporal persists in workflow history under a default 2 MiB
 // blob-size limit (base64 inflates ~4/3). A 1 MiB PNG (~1.4 MiB base64) leaves headroom for the rest of
-// the result; anything larger is dropped rather than risk failing the turn's real outcome. (This is far
-// under the 8 MiB NATS max_payload the event also crosses.)
+// the result; anything larger is dropped rather than risk failing the turn's real outcome. (Far under
+// the 8 MiB NATS max_payload the event also crosses.)
 func (s *Supervisor) harvestScreenshot(turnStart time.Time) []byte {
 	const maxScreenshotBytes = 1 << 20 // 1 MiB PNG; base64 ~1.4 MiB, under Temporal's 2 MiB blob limit
-	dir := filepath.Join(s.repoDir, ".mando")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	var newestName string
-	var newestMod time.Time
-	for _, e := range entries {
-		// Regular files only (no symlink deref via the dirent type), a .png, and produced this turn.
-		if !e.Type().IsRegular() || !strings.HasSuffix(strings.ToLower(e.Name()), ".png") {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil || !info.ModTime().After(turnStart) {
-			continue
-		}
-		if newestName == "" || info.ModTime().After(newestMod) {
-			newestName, newestMod = e.Name(), info.ModTime()
-		}
-	}
-	if newestName == "" {
-		return nil
-	}
-	// Open with O_NOFOLLOW and validate + read the SAME descriptor, so a symlink swapped in after the
-	// dirent check (TOCTOU) can't redirect the read at a token file: O_NOFOLLOW refuses a symlink, and
-	// fstat/read operate on the opened regular file, never a re-resolved path.
-	f, err := os.OpenFile(filepath.Join(dir, newestName), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	// Open with O_NOFOLLOW and validate + read the SAME descriptor, so the path can't be a symlink
+	// pointed at a token file: O_NOFOLLOW refuses a symlink, and fstat/read operate on that fd only.
+	f, err := os.OpenFile(filepath.Join(s.repoDir, ".mando", shareScreenshotName), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil
 	}
 	defer f.Close()
 	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || !info.ModTime().After(turnStart) {
 		return nil
 	}
 	if info.Size() > maxScreenshotBytes {
-		s.deps.Log.Info("screenshot too large to share", "name", newestName, "bytes", info.Size())
+		s.deps.Log.Info("shared screenshot too large to send", "bytes", info.Size())
 		return nil
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxScreenshotBytes)) // bound the read to the bytes, not just the stat
@@ -568,8 +550,12 @@ const visualCheck = "If your change has a visible effect in a browser (UI, styli
 	"cut-off text, broken layout). Fix and re-capture, at most about three times. Prefer rendering a " +
 	"single component or Storybook story over booting the whole app when you can — it is faster and more " +
 	"reliable. If you genuinely cannot get a meaningful render (it needs a backend, secrets, seed data, " +
-	"or a login), say so plainly in your summary and move on — never block the change on it. Keep the " +
-	"screenshots out of the commit (put your capture directory, for example .mando/, in .gitignore)."
+	"or a login), say so plainly in your summary and move on — never block the change on it. These " +
+	"verification captures are for YOU and are NOT shared with the reviewer by default — a screenshot on " +
+	"every change is noise. Share one ONLY when the reviewer asks to see it, or when the visual result " +
+	"is genuinely worth showing them: to share, save that current screenshot as `.mando/share.png` " +
+	"(overwrite it so it always reflects this turn's result). Keep the capture directory out of the " +
+	"commit (put .mando/ in .gitignore)."
 
 // DefaultAutonomousPreamble / DefaultCollaboratePreamble expose the built-in preambles so the worker
 // can materialize them to disk for the dashboard (which shows them as the editable default / reset

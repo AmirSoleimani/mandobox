@@ -26,6 +26,21 @@ picture. (Sharing screenshots into the Slack/Telegram thread is a separate, late
 - **Fail-soft.** If the app can't render (needs a backend, secrets, seed data, or a login), the agent
   says so in its summary and opens the PR anyway. Visual verification never blocks a change.
 
+## Sharing a screenshot with you
+
+Verification screenshots are for the **agent** — it renders and looks so *it* can catch a broken layout.
+They are **not** posted to you by default (a screenshot on every change is noise).
+
+The agent shares one into your Slack/Telegram thread **only when it's warranted** — when you ask ("…and
+show me a screenshot"), or when it judges the visual result genuinely worth showing. Mechanically, it
+opts in by saving that capture as `.mando/share.png`; the control plane picks up that one file (best-
+effort, ≤1 MiB) and posts it into the session's thread. Ask again after a change and you get the **new**
+state — the shared file is scoped to the current turn and overwritten, so it's never stale.
+
+This is chat-only: Slack (needs the bot **`files:write`** scope) and Telegram (`sendPhoto`). PR embedding
+is intentionally not supported — GitHub can't render an image inline in a *private*-repo PR body with a
+bot's credentials.
+
 ## Telling the agent how to run your app
 
 The agent auto-detects the common case (a `dev`/`start` script in `package.json`, a framework's default

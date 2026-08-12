@@ -13,15 +13,15 @@ func TestHarvestScreenshot(t *testing.T) {
 	dir := t.TempDir()
 	s := &Supervisor{repoDir: dir, deps: Deps{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}
 	mando := filepath.Join(dir, ".mando")
+	share := filepath.Join(mando, "share.png")
 	turnStart := time.Now()
 
-	write := func(name string, content []byte, mod time.Time) {
+	write := func(path string, content []byte, mod time.Time) {
 		t.Helper()
-		p := filepath.Join(mando, name)
-		if err := os.WriteFile(p, content, 0o644); err != nil {
+		if err := os.WriteFile(path, content, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Chtimes(p, mod, mod); err != nil {
+		if err := os.Chtimes(path, mod, mod); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -34,40 +34,41 @@ func TestHarvestScreenshot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Non-PNG files are ignored; no PNG → nil.
-	write("notes.txt", []byte("not an image"), turnStart.Add(time.Second))
+	// Self-verification captures under other names are NOT shared — only .mando/share.png is.
+	write(filepath.Join(mando, "check.png"), []byte("VERIFY-ONLY"), turnStart.Add(time.Second))
 	if got := s.harvestScreenshot(turnStart); got != nil {
-		t.Fatalf("no png present: want nil, got %d bytes", len(got))
+		t.Fatalf("non-share capture: want nil, got %q", string(got))
 	}
 
-	// A PNG from BEFORE this turn is stale and must not be harvested (would re-post an earlier turn's).
-	write("stale.png", []byte("STALE"), turnStart.Add(-time.Hour))
+	// A share.png left over from BEFORE this turn is stale and must not be re-posted.
+	write(share, []byte("STALE-SHARE"), turnStart.Add(-time.Hour))
 	if got := s.harvestScreenshot(turnStart); got != nil {
-		t.Fatalf("pre-turn png: want nil, got %q", string(got))
+		t.Fatalf("pre-turn share.png: want nil, got %q", string(got))
 	}
 
-	// Among this-turn PNGs, the most-recent (the agent's final capture) wins.
-	write("first.png", []byte("FIRST"), turnStart.Add(1*time.Second))
-	write("final.png", []byte("FINAL"), turnStart.Add(2*time.Second))
-	if got := string(s.harvestScreenshot(turnStart)); got != "FINAL" {
-		t.Fatalf("newest wins: want %q, got %q", "FINAL", got)
+	// share.png (re)written this turn is harvested — the agent opted in and it reflects the current state.
+	write(share, []byte("SHARE-ME"), turnStart.Add(2*time.Second))
+	if got := string(s.harvestScreenshot(turnStart)); got != "SHARE-ME" {
+		t.Fatalf("this-turn share.png: want %q, got %q", "SHARE-ME", got)
 	}
 
-	// A symlink is never followed, even if it is the newest ".png" entry — no exfiltration via .mando.
+	// A symlink at share.png is never followed (no exfiltration of a token file).
+	os.Remove(share)
 	secret := filepath.Join(dir, "secret")
 	if err := os.WriteFile(secret, []byte("SECRET"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(secret, filepath.Join(mando, "zzz-newest.png")); err != nil {
+	if err := os.Symlink(secret, share); err != nil {
 		t.Fatal(err)
 	}
-	if got := string(s.harvestScreenshot(turnStart)); got != "FINAL" {
-		t.Fatalf("symlink must be skipped: want %q, got %q", "FINAL", got)
+	if got := s.harvestScreenshot(turnStart); got != nil {
+		t.Fatalf("symlink share.png: want nil, got %q", string(got))
 	}
 
-	// A newest-but-oversize capture is skipped (returns nil rather than shipping something over the cap).
-	write("huge.png", make([]byte, (1<<20)+1), turnStart.Add(3*time.Second))
+	// An oversize share.png is dropped (never ship something over the cap).
+	os.Remove(share)
+	write(share, make([]byte, (1<<20)+1), turnStart.Add(3*time.Second))
 	if got := s.harvestScreenshot(turnStart); got != nil {
-		t.Fatalf("oversize newest: want nil, got %d bytes", len(got))
+		t.Fatalf("oversize share.png: want nil, got %d bytes", len(got))
 	}
 }
