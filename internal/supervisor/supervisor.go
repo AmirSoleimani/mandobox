@@ -234,6 +234,9 @@ func (s *Supervisor) resumeSpec(instructions, queued []string) AgentSpec {
 // otherwise it is a push to the existing branch.
 func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool) error {
 	tokens := res.Usage.InputTokens + res.Usage.OutputTokens
+	// The agent's final visual-verification screenshot (if any), to share in the chat thread. Only
+	// attached to a code-changing outcome below — a no-op turn doesn't carry one.
+	shot := s.harvestScreenshot()
 
 	// Look at what changed before committing: a clean tree is the no-op turn, and the diff is what
 	// lets a cheap model write a real commit message instead of a fixed placeholder.
@@ -265,10 +268,56 @@ func (s *Supervisor) finalizeTurn(ctx context.Context, res Result, openPR bool) 
 		s.deps.Log.Info("opened PR", "number", number, "url", url)
 		s.prOpened = true // later turns push to this PR instead of opening another
 		return s.deps.Bus.Event(Event{Type: EventPROpened, PRNumber: number, PRURL: url,
-			CommitSHA: sha, Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens})
+			CommitSHA: sha, Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens, Screenshot: shot})
 	}
 	return s.deps.Bus.Event(Event{Type: EventPushDone, CommitSHA: sha,
-		Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens})
+		Reply: res.Result, CostUSD: res.TotalCostUSD, Tokens: tokens, Screenshot: shot})
+}
+
+// harvestScreenshot returns the most-recent PNG the agent left in the visual-verification capture
+// directory (.mando/ under the repo), so the control plane can share it in the chat thread. The agent
+// keeps that directory git-ignored (visualCheck preamble), so at finalize the PNGs are present on disk
+// but uncommitted. Best-effort: returns nil on any problem (no directory, no PNGs, oversize, read
+// error) — sharing a screenshot must never affect the turn's outcome. Capped so it stays well under
+// the NATS max_payload even after base64.
+func (s *Supervisor) harvestScreenshot() []byte {
+	const maxScreenshotBytes = 3 << 20 // 3 MiB PNG (~4 MiB base64, under the 8 MiB NATS max_payload)
+	dir := filepath.Join(s.repoDir, ".mando")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var newestName string
+	var newestMod time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".png") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if newestName == "" || info.ModTime().After(newestMod) {
+			newestName, newestMod = e.Name(), info.ModTime()
+		}
+	}
+	if newestName == "" {
+		return nil
+	}
+	path := filepath.Join(dir, newestName)
+	info, err := os.Stat(path)
+	if err != nil || info.Size() == 0 {
+		return nil
+	}
+	if info.Size() > maxScreenshotBytes {
+		s.deps.Log.Info("screenshot too large to share", "path", path, "bytes", info.Size())
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // failf publishes an agent_failed event and returns the wrapped error.

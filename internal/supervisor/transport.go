@@ -87,6 +87,10 @@ type Event struct {
 	CostUSD   float64 `json:"cost_usd,omitempty"`
 	Tokens    int     `json:"tokens,omitempty"`
 	Info      string  `json:"info,omitempty"` // tunnel output (EventTunnel) or tree status (EventDetached)
+	// Screenshot is the agent's final visual-verification capture (a PNG), harvested from .mando/ on a
+	// code-changing turn so the control plane can post it into the chat thread. Marshals as base64;
+	// small (tens–hundreds of KB), well under the NATS max_payload. Empty on turns with no capture.
+	Screenshot []byte `json:"screenshot,omitempty"`
 }
 
 // Command types delivered to the guest.
