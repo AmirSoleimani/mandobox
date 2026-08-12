@@ -5,7 +5,7 @@ golden_image_supervisor_src: "{{ playbook_dir }}/../bin/fc-supervisor"
 # On-host build inputs/outputs.
 golden_image_lib_dir: /usr/local/lib/fleet
 golden_image_out_dir: "{{ fleet_images_dir }}" # /var/lib/fleet/images
-golden_image_size_mb: 2048
+golden_image_size_mb: 3072  # ~2–3GB (headroom for the baked-in Chromium/Playwright)
 
 # Build dependencies installed on the fleet host (Docker-free path).
 golden_image_packages:

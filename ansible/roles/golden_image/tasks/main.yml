@@ -51,6 +51,24 @@
     - update-tools.sh
     - tools.env
 
+# mkimage.sh copies this into the guest rootfs (/usr/local/bin/mando-shot) and installs its
+# Playwright/Chromium runtime around it — the browser for visual self-verification (docs/preview.md).
+- name: Create the image-build asset directory
+  ansible.builtin.file:
+    path: "{{ golden_image_lib_dir }}/assets"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the mando-shot asset for the image build
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../image/assets/mando-shot.js"
+    dest: "{{ golden_image_lib_dir }}/assets/mando-shot.js"
+    owner: root
+    group: root
+    mode: "0755"
+
 # update-tools.sh builds the cached base on first run (several minutes), then assembles + activates +
 # audits. Output is redirected to a host log: npm/node emit non-UTF8 bytes Ansible's deserializer
 # rejects. On failure, read /var/log/fleet-image-build.log on the host.
