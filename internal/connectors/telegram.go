@@ -97,15 +97,27 @@ func (t *telegramConnector) handle(ctx context.Context, d *Dispatcher, u tgUpdat
 		// Any other slash command falls through: it steers a running session if there is one,
 		// otherwise it's ignored (or nudged, in a 1:1 chat) below.
 	}
-	// A plain message → steer the chat's running session.
-	wfID, err := d.FindByConversation(cctx, "telegram:"+chatID)
-	if err != nil {
-		// No running session for this chat. In a 1:1 chat, nudge with the usage rather than
-		// staying silent; in a group, stay quiet to avoid noise.
-		if m.Chat.Type == "private" {
-			t.reply(cctx, chatID, telegramNoSession)
+	// A plain message steers a running session. If it's a REPLY to a specific session's message, route
+	// to THAT session (a chat can host several concurrent sessions); otherwise fall back to the chat's
+	// single/most-recent session.
+	var wfID string
+	if m.ReplyToMessage != nil {
+		token := "telegram:" + chatID + ":" + strconv.FormatInt(m.ReplyToMessage.MessageID, 10)
+		if id, err := d.FindByChatMessage(cctx, token); err == nil {
+			wfID = id
 		}
-		return
+	}
+	if wfID == "" {
+		id, err := d.FindByConversation(cctx, "telegram:"+chatID)
+		if err != nil {
+			// No running session for this chat. In a 1:1 chat, nudge with the usage rather than staying
+			// silent; in a group, stay quiet to avoid noise.
+			if m.Chat.Type == "private" {
+				t.reply(cctx, chatID, telegramNoSession)
+			}
+			return
+		}
+		wfID = id
 	}
 	if err := d.Signal(cctx, wfID, control.SignalUserMessage, control.UserMessageSignal{Text: text}); err != nil {
 		log.Printf("connectors/telegram signal %s: %v", wfID, err)
@@ -193,6 +205,11 @@ type tgMessage struct {
 		ID   int64  `json:"id"`
 		Type string `json:"type"` // "private", "group", "supergroup", … — used to avoid nudging in groups
 	} `json:"chat"`
+	// ReplyToMessage is set when the user replies to a specific message; its id routes the reply to the
+	// session that posted that message (so one chat can steer several concurrent sessions).
+	ReplyToMessage *struct {
+		MessageID int64 `json:"message_id"`
+	} `json:"reply_to_message"`
 }
 
 func (t *telegramConnector) getMe(ctx context.Context) (string, error) {

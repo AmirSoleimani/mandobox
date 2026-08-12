@@ -484,6 +484,7 @@ func postRoot(ctx workflow.Context, st *State, in WorkflowInput) {
 		_ = workflow.UpsertTypedSearchAttributes(ctx,
 			temporal.NewSearchAttributeKeyKeyword(SAConversation).ValueSet(
 				st.Conversation.Kind+":"+st.Conversation.Thread))
+		recordChatMessage(ctx, st, r.MessageID) // so a reply to the root steers this session
 	}
 }
 
@@ -499,8 +500,41 @@ func notify(ctx workflow.Context, st *State, text string) {
 		return
 	}
 	var a *Activities
-	_ = workflow.ExecuteActivity(slackCtx(ctx), a.PostMessage,
-		PostMessageParams{Conversation: st.Conversation, Text: text}).Get(ctx, nil)
+	var r NotifyResult
+	if err := workflow.ExecuteActivity(slackCtx(ctx), a.PostMessage,
+		PostMessageParams{Conversation: st.Conversation, Text: text}).Get(ctx, &r); err == nil {
+		recordChatMessage(ctx, st, r.MessageID)
+	}
+}
+
+// maxChatMsgIDs caps the per-session reply-routing token list: a reviewer replies to a recent message,
+// so the most-recent few dozen is plenty and keeps the search attribute small.
+const maxChatMsgIDs = 40
+
+// recordChatMessage remembers a posted chat message (by its "<kind>:<channel>:<message_id>" token) so a
+// reply to it routes back to THIS session — the mechanism that lets one chat host several sessions.
+// GetVersion-gated: sessions whose history predates the feature return DefaultVersion and don't upsert,
+// so replay stays deterministic; they simply keep the old chat-scoped routing. No-op without a channel
+// or message id (e.g. a channel-less dashboard/CLI session).
+func recordChatMessage(ctx workflow.Context, st *State, msgID string) {
+	if workflow.GetVersion(ctx, "chat-reply-routing", workflow.DefaultVersion, 1) < 1 {
+		return
+	}
+	if msgID == "" || st.Conversation.Channel == "" {
+		return
+	}
+	token := st.Conversation.Kind + ":" + st.Conversation.Channel + ":" + msgID
+	for _, t := range st.ChatMsgIDs {
+		if t == token {
+			return // already recorded (e.g. an edited message reuses its id)
+		}
+	}
+	st.ChatMsgIDs = append(st.ChatMsgIDs, token)
+	if len(st.ChatMsgIDs) > maxChatMsgIDs {
+		st.ChatMsgIDs = st.ChatMsgIDs[len(st.ChatMsgIDs)-maxChatMsgIDs:]
+	}
+	_ = workflow.UpsertTypedSearchAttributes(ctx,
+		temporal.NewSearchAttributeKeyKeywordList(SAChatMsgIDs).ValueSet(st.ChatMsgIDs))
 }
 
 // postScreenshot shares the agent's visual-verification capture into the session thread. Best-effort:

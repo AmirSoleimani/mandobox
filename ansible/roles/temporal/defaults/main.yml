@@ -23,6 +23,7 @@ temporal_search_attributes:
   - {name: pr_number, type: Int}
   - {name: review_round, type: Int}
   - {name: conversation, type: Keyword} # "<kind>:<thread>" → workflow, for connector reply routing
+  - {name: chat_msg_ids, type: KeywordList} # "<kind>:<channel>:<msg_id>" tokens → session, for reply-to-message routing
 
 # PostgreSQL. The password is a Tier-0 secret kept on the controller, never committed.
 temporal_pg_host: 127.0.0.1
