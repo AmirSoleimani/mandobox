@@ -38,6 +38,7 @@
     - Restart mando-worker
     - Restart webhook-rx
     - Restart nats-bridge
+    - Restart mando-connectors # mando-connectors is a control_plane binary too; a changed binary must restart it
 
 - name: Install the GitHub App private key (Tier-0)
   ansible.builtin.copy:
