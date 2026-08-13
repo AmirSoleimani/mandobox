@@ -11,6 +11,12 @@ without you.
 *Coding-to-PR is the flagship workload today. Underneath, the runtime is general — the agent harness
 and the work it does are pluggable, not baked in.*
 
+**Works with** &nbsp;
+[![GitHub](https://img.shields.io/badge/GitHub-181717?logo=github&logoColor=white)](docs/github-setup.md)
+[![Slack](https://img.shields.io/badge/Slack-4A154B?logo=slack&logoColor=white)](docs/slack.md)
+[![Telegram](https://img.shields.io/badge/Telegram-26A5E4?logo=telegram&logoColor=white)](docs/telegram.md)
+&nbsp;— review on GitHub, start & steer from Slack or Telegram.
+
 ---
 
 ## See it in action
@@ -27,10 +33,19 @@ and the work it does are pluggable, not baked in.*
 - **Delegate a task, get back a pull request** — "add a `/careers` page", "fix the login timeout",
   "bump this dependency and fix the fallout." The agent reads the repo, makes the change, runs the
   tests, and opens a PR.
+- **Plan first, then build** — start a task with `--plan` and the agent explores your project and comes
+  back with a plan instead of code. Talk it over in the thread — refine it, push back, ask questions —
+  and it writes code only when you say go. It'll also stop and ask on its own if it hits a real fork in
+  the road, rather than guessing.
+- **It checks its own UI work** — for a change you can see in a browser, the agent renders the result in
+  a real headless browser, looks at the screenshot, and fixes what's obviously broken *before* opening
+  the PR. Ask to see it and it drops the screenshot straight into the chat thread.
 - **Run many at once** — each in its own disposable computer, without interfering.
 - **Review and steer on GitHub** — your PR comments and reviews drive the next round; the agent
   replies and revises right in the thread.
-- **Or steer from Slack** — kick off a task, drop in a plan or spec file, and nudge it along.
+- **Or steer from chat** — kick off a task from Slack or Telegram, drop in a plan or spec file, and reply
+  to nudge it along; when several tasks share one chat, reply to a specific one's message to steer just
+  that task.
 - **Watch it work live** — a built-in terminal streams its thinking, the commands it runs, and the
   files it edits, and you can **type back to steer it**.
 - **Go hands-on** — open a running machine in full VS Code (in your browser) to poke around or edit
@@ -38,7 +53,8 @@ and the work it does are pluggable, not baked in.*
 
 ## How it works
 
-1. **You ask** — from Slack or the dashboard, pointing at a repo and describing the change.
+1. **You ask** — from Slack, Telegram, or the dashboard, pointing at a repo and describing the change.
+   Add `--plan` and it proposes an approach for you to refine and approve before it writes any code.
 2. **It isolates** — a fresh, locked-down micro-VM boots just for this task.
 3. **The agent works** — reads the repo, makes the change, runs the tests, and writes an honest
    summary, *including what it's unsure about.*
@@ -54,7 +70,7 @@ and the work it does are pluggable, not baked in.*
 - **One throwaway computer per task.** Each job runs in an isolated micro-VM, destroyed after. Agents
   can't see each other and only reach the parts of the internet you allow.
 - **It runs in parallel.** Many tasks side by side, without stepping on each other.
-- **You talk to it where you already work** — Slack, GitHub, or a browser control room.
+- **You talk to it where you already work** — Slack, Telegram, GitHub, or a browser control room.
 
 ## The control room
 
@@ -77,7 +93,7 @@ and manage models, connectors, costs, health, and secrets from one place.
 
 ## Roadmap
 
-Anything that can describe a task can start one — today that's Slack, GitHub, and the dashboard.
+Anything that can describe a task can start one — today that's Slack, Telegram, GitHub, and the dashboard.
 Next, we want work to reach the fleet from wherever it already lives, no new habits required
 (**planned/exploring**, not shipped):
 
