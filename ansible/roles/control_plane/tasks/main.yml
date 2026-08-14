@@ -163,6 +163,40 @@
     - Restart mando-worker
     - Restart mando-connectors
 
+# ---- Linear (optional): only if the API key + webhook secret both exist on the controller ----
+- name: Check for the Linear secrets on the controller
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: control_plane_linear_stat
+  loop:
+    - "{{ control_plane_linear_api_key_src }}"
+    - "{{ control_plane_linear_webhook_secret_src }}"
+
+- name: Decide whether Linear is configured
+  ansible.builtin.set_fact:
+    control_plane_linear_enabled: "{{ control_plane_linear_stat.results | map(attribute='stat.exists') | select | list | length == 2 }}"
+
+- name: Install the Linear env file (Tier-0)
+  ansible.builtin.copy:
+    content: |
+      LINEAR_API_KEY={{ lookup('file', control_plane_linear_api_key_src) | trim }}
+      LINEAR_WEBHOOK_SECRET={{ lookup('file', control_plane_linear_webhook_secret_src) | trim }}
+      LINEAR_WEBHOOK_ADDR={{ control_plane_linear_webhook_addr }}
+      LINEAR_REPO_ALLOWLIST={{ control_plane_linear_repo_allowlist | join(' ') }}
+      LINEAR_DEFAULT_REPO={{ control_plane_linear_default_repo }}
+    dest: "{{ control_plane_conf_dir }}/linear.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: control_plane_linear_enabled
+  notify:
+    - Restart mando-worker
+    - Restart mando-connectors
+
 - name: Install the default connectors enable/disable config (dashboard-managed; preserved if present)
   ansible.builtin.copy:
     content: "{}\n"

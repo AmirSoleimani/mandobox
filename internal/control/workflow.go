@@ -500,8 +500,10 @@ func PRWorkflow(ctx workflow.Context, in WorkflowInput) (State, error) {
 	switch {
 	case merged:
 		st.Phase = "merged"
+		advance(ctx, st, "done") // move the Linear issue to Done
 	case closed:
 		st.Phase = "closed"
+		advance(ctx, st, "canceled") // move the Linear issue to Canceled
 	case aborted:
 		st.Phase = "aborted:" + abortReason
 	case endedNoInput:
@@ -677,6 +679,7 @@ func reportPhase(ctx workflow.Context, st *State, res PhaseResult, fromPR bool) 
 		}
 		msg += fmt.Sprintf("\n_$%.4f · %d tokens_", res.CostUSD, res.Tokens)
 		notify(ctx, st, msg)
+		advance(ctx, st, "in_review") // e.g. move the Linear issue to In Review (no-op for chat connectors)
 	case supervisor.EventPushDone:
 		// A PR-origin turn already carries the full reply in its PR thread; Slack gets a compact
 		// breadcrumb (a short snippet + link) so the timeline stays followable without duplicating a
@@ -744,6 +747,23 @@ func slackCtx(ctx workflow.Context) workflow.Context {
 	})
 }
 
+// advance moves the session's external item (e.g. a Linear issue) to the workflow state for a lifecycle
+// stage ("in_review"|"done"|"canceled") — how an issue-tracker connector "moves the ticket along". The
+// Kind check is first, so a non-Linear conversation emits NO command (Slack/Telegram command streams stay
+// byte-identical, old and new); the GetVersion gate is defense-in-depth so the guard can be broadened
+// later. Best-effort: AdvanceConversation swallows errors, so a provider outage never fails the run.
+func advance(ctx workflow.Context, st *State, stage string) {
+	if st.Conversation.Kind != "linear" {
+		return
+	}
+	if workflow.GetVersion(ctx, "linear-lifecycle", workflow.DefaultVersion, 1) < 1 {
+		return
+	}
+	var a *Activities
+	_ = workflow.ExecuteActivity(slackCtx(ctx), a.AdvanceConversation,
+		AdvanceParams{Conversation: st.Conversation, Stage: stage}).Get(ctx, nil)
+}
+
 // reconcilePR adopts an open PR that exists on the branch but whose pr_opened event never
 // arrived (lost NATS message), so the workflow tracks it instead of tearing down.
 func reconcilePR(ctx workflow.Context, st *State) {
@@ -756,6 +776,7 @@ func reconcilePR(ctx workflow.Context, st *State) {
 			temporal.NewSearchAttributeKeyInt64(SAPRNumber).ValueSet(int64(chk.Number)))
 		notify(ctx, st, fmt.Sprintf(":mag: Recovered PR <%s|#%d> (its open event was lost in transit).",
 			chk.URL, chk.Number))
+		advance(ctx, st, "in_review") // a recovered PR still moves the Linear issue to In Review
 	}
 }
 

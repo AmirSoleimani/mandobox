@@ -66,6 +66,10 @@ type Notifier interface {
 	// which routes replies by thread, not per-message). Best-effort: a connector that can't upload images
 	// (missing scope, unsupported, empty token) returns "", nil.
 	PostImage(ctx context.Context, conv Conversation, caption string, png []byte, filename string) (string, error)
+	// Advance moves the conversation's external item forward for a lifecycle stage
+	// ("in_review"|"done"|"canceled"). It's how an issue-tracker connector "moves the ticket along" —
+	// chat connectors with no state model return nil. Best-effort: an error is swallowed by the activity.
+	Advance(ctx context.Context, conv Conversation, stage string) error
 }
 
 // notifierFor returns the Notifier for a connector kind, or nil when it isn't registered — i.e. the
@@ -142,4 +146,25 @@ func (a *Activities) PostImage(ctx context.Context, p PostImageParams) (string, 
 		return "", nil
 	}
 	return id, nil
+}
+
+// AdvanceParams drives the lifecycle-advance activity: move the session's external item (e.g. a Linear
+// issue) to the state for a lifecycle stage.
+type AdvanceParams struct {
+	Conversation Conversation `json:"conversation"`
+	Stage        string       `json:"stage"` // "in_review" | "done" | "canceled"
+}
+
+// AdvanceConversation routes a lifecycle advance to the session's connector. BEST-EFFORT: an unconfigured
+// connector, a connector with no state model (chat), or a provider error must never fail the workflow —
+// the error is logged and swallowed.
+func (a *Activities) AdvanceConversation(ctx context.Context, p AdvanceParams) error {
+	n := a.notifierFor(p.Conversation.resolvedKind())
+	if n == nil {
+		return nil
+	}
+	if err := n.Advance(ctx, p.Conversation, p.Stage); err != nil {
+		activity.GetLogger(ctx).Warn("advance conversation failed (best-effort, ignored)", "kind", p.Conversation.resolvedKind(), "stage", p.Stage, "err", err)
+	}
+	return nil
 }

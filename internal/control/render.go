@@ -106,3 +106,60 @@ func canonicalToTelegramHTML(s string) string {
 	}
 	return s
 }
+
+// canonicalToLinearMarkdown translates canonical Slack-mrkdwn into GitHub-flavored Markdown, which Linear
+// renders in comments: *bold*→**bold** (single * is italic in GFM, so bold MUST double), _italic_→*italic*,
+// ~strike~→~~strike~~, <url|label>→[label](url), `code`/```fences``` pass through, :emoji:→Unicode. Like
+// the Telegram translator it's a best-effort rewriter (protect code+links, rewrite emphasis, restore) — but
+// the target is Markdown, so there's no HTML escaping.
+func canonicalToLinearMarkdown(s string) string {
+	if s == "" {
+		return s
+	}
+	type span struct{ tag, body string }
+
+	// 1. Protect code spans/fences so their bodies survive the emphasis rewrites (fences before inline).
+	var codes []span
+	protect := func(re *regexp.Regexp, tag string) {
+		s = re.ReplaceAllStringFunc(s, func(m string) string {
+			codes = append(codes, span{tag, re.FindStringSubmatch(m)[1]})
+			return "\x00c" + strconv.Itoa(len(codes)-1) + "\x00"
+		})
+	}
+	protect(tgFence, "fence")
+	protect(tgInline, "inline")
+
+	// 2. Protect Slack links (they carry < >); rewritten to [label](url) on restore.
+	var links []span // tag=url, body=label
+	s = tgLink.ReplaceAllStringFunc(s, func(m string) string {
+		sub := tgLink.FindStringSubmatch(m)
+		links = append(links, span{sub[1], sub[2]})
+		return "\x00l" + strconv.Itoa(len(links)-1) + "\x00"
+	})
+
+	// 3. Emoji + emphasis rewrites (on link-and-code-free text).
+	s = replaceEmoji(s)
+	s = tgBold.ReplaceAllString(s, "**$1**")
+	s = tgStrike.ReplaceAllString(s, "~~$1~~")
+	s = tgItalic.ReplaceAllString(s, "$1*$2*")
+
+	// 4. Restore links — dropping any non-http(s)/mailto scheme to the plain label.
+	for i, l := range links {
+		var repl string
+		if tgAllowedScheme.MatchString(l.tag) {
+			repl = "[" + l.body + "](" + l.tag + ")"
+		} else {
+			repl = l.body
+		}
+		s = strings.Replace(s, "\x00l"+strconv.Itoa(i)+"\x00", repl, 1)
+	}
+	// 5. Restore code/fences.
+	for i, c := range codes {
+		if c.tag == "fence" {
+			s = strings.Replace(s, "\x00c"+strconv.Itoa(i)+"\x00", "```\n"+c.body+"\n```", 1)
+		} else {
+			s = strings.Replace(s, "\x00c"+strconv.Itoa(i)+"\x00", "`"+c.body+"`", 1)
+		}
+	}
+	return s
+}

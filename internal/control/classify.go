@@ -1,13 +1,10 @@
 package control
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
 	"strings"
-	"time"
+
+	"github.com/AmirSoleimani/mandobox/internal/llm"
 )
 
 const classifySystem = `You route messages sent to an AI coding assistant that is working on a pull ` +
@@ -76,52 +73,7 @@ func planDecisionFromText(t string) string {
 // extra secret is needed. Unexported so it is not mistaken for a Temporal activity (see register_test.go).
 func (a *Activities) helperClassify(ctx context.Context, system, message string) string {
 	baseURL, token, model := a.resolveProvider().helperLLM(a.GatewayURL)
-	if baseURL == "" || model == "" {
-		return ""
-	}
-	body, err := json.Marshal(map[string]any{
-		"model":      model,
-		"max_tokens": 5,
-		"system":     system,
-		"messages":   []map[string]any{{"role": "user", "content": message}},
-	})
-	if err != nil {
-		return ""
-	}
-	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(cctx, http.MethodPost,
-		strings.TrimRight(baseURL, "/")+"/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		return ""
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("content-type", "application/json")
-
-	resp, err := (&http.Client{Timeout: 25 * time.Second}).Do(req)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode/100 != 2 {
-		return ""
-	}
-	var out struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return ""
-	}
-	var t string
-	for _, c := range out.Content {
-		if c.Type == "text" {
-			t += c.Text
-		}
-	}
-	return strings.ToLower(t)
+	c := llm.New(baseURL, token, model)
+	c.MaxTokens = 5 // these classifiers reply with a single word
+	return c.Classify(ctx, system, message)
 }

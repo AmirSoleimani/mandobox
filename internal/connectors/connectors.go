@@ -30,7 +30,7 @@ type Connector interface {
 // Registry lists every available connector. Each reads its own credentials from the environment at
 // construction, so Configured() reflects whether it is set up on this box.
 func Registry() []Connector {
-	return []Connector{newSlack(), newTelegram()}
+	return []Connector{newSlack(), newTelegram(), newLinear()}
 }
 
 // ConnectorConfig is the per-connector runtime state the dashboard manages (connectors.json).

@@ -87,6 +87,18 @@ func managedSecrets() []secretDef {
 			Restart: [][]string{{"mando-worker", "fleet-worker"}, {"mando-connectors"}}, Hint: "123456789:ABC-…", Editable: true,
 		},
 		{
+			Name: "linear-api-key", Label: "Linear API key", Kind: "env",
+			Desc:    "Linear personal API key. Lets the worker comment on issues + move their state, and the connector verify inbound webhooks and read issues.",
+			Targets: []secretTarget{{Path: "/etc/fleet/linear.env", Key: "LINEAR_API_KEY"}},
+			Restart: [][]string{{"mando-worker", "fleet-worker"}, {"mando-connectors"}}, Hint: "lin_api_…", Editable: true,
+		},
+		{
+			Name: "linear-webhook-secret", Label: "Linear webhook signing secret", Kind: "env",
+			Desc:    "HMAC secret Linear signs webhook deliveries with. The connector verifies every delivery against it, so only Linear-signed events pick up issues.",
+			Targets: []secretTarget{{Path: "/etc/fleet/linear.env", Key: "LINEAR_WEBHOOK_SECRET"}},
+			Restart: [][]string{{"mando-connectors"}}, Hint: "lin_wh_…", Editable: true,
+		},
+		{
 			Name: "webhook-secret", Label: "GitHub webhook secret", Kind: "env",
 			Desc:    "HMAC secret that signs GitHub webhook deliveries. webhook-rx verifies every payload against it, so only GitHub-signed events (PR reviews, comments, CI) drive a session.",
 			Targets: []secretTarget{{Path: "/etc/fleet/webhook-secret.env", Key: "GITHUB_WEBHOOK_SECRET"}},

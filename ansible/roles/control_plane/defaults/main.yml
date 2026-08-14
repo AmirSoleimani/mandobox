@@ -45,6 +45,13 @@ control_plane_slack_channel_src: "{{ playbook_dir }}/../secrets/slack-channel"
 # to Telegram and the mando-connectors host runs it; otherwise both degrade gracefully (no Telegram).
 control_plane_telegram_bot_token_src: "{{ playbook_dir }}/../secrets/telegram-bot-token"
 control_plane_telegram_chat_src: "{{ playbook_dir }}/../secrets/telegram-chat"
+# Linear connector (optional): a personal API key + webhook signing secret enable it. The repo is inferred
+# from each issue's text by a cheap LLM, grounded to this allowlist (the repos the agent may touch).
+control_plane_linear_api_key_src: "{{ playbook_dir }}/../secrets/linear-api-key"
+control_plane_linear_webhook_secret_src: "{{ playbook_dir }}/../secrets/linear-webhook-secret"
+control_plane_linear_repo_allowlist: []
+control_plane_linear_default_repo: ""
+control_plane_linear_webhook_addr: "0.0.0.0:8089"
 
 # Connector enable/disable config (dashboard-managed connectors.json). Absent/empty → every configured
 # connector runs; a dashboard-written {"slack":{"enabled":false}} turns one off.

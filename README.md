@@ -15,7 +15,8 @@ and the work it does are pluggable, not baked in.*
 [![GitHub](https://img.shields.io/badge/GitHub-181717?logo=github&logoColor=white)](docs/github-setup.md)
 [![Slack](https://img.shields.io/badge/Slack-4A154B?logo=slack&logoColor=white)](docs/slack.md)
 [![Telegram](https://img.shields.io/badge/Telegram-26A5E4?logo=telegram&logoColor=white)](docs/telegram.md)
-&nbsp;— review on GitHub, start & steer from Slack or Telegram.
+[![Linear](https://img.shields.io/badge/Linear-5E6AD2?logo=linear&logoColor=white)](docs/linear.md)
+&nbsp;— review on GitHub, start & steer from Slack or Telegram, or label a Linear issue.
 
 ---
 
@@ -97,9 +98,9 @@ Anything that can describe a task can start one — today that's Slack, Telegram
 Next, we want work to reach the fleet from wherever it already lives, no new habits required
 (**planned/exploring**, not shipped):
 
-- **Connectors** — Linear / Jira / GitHub Issues (assign or label an issue → it opens the PR and
-  moves the ticket along), Discord / Teams, Sentry (turn a recurring error into a fix task),
-  scheduled chores, and a public API + webhooks.
+- **Connectors** — Jira / GitHub Issues (assign or label an issue → it opens the PR and moves the ticket
+  along, like the shipped **[Linear](docs/linear.md)** connector), Discord / Teams, Sentry (turn a recurring
+  error into a fix task), scheduled chores, and a public API + webhooks.
 - **Beyond** — more agent harnesses, team accounts with roles, per-repo budgets & alerts, and saved
   task templates.
 

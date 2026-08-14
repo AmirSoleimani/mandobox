@@ -68,6 +68,21 @@ func connectorDefs() []connectorDef {
 			},
 			Doc: "docs/telegram.md",
 		},
+		{
+			ID:      "linear",
+			Label:   "Linear",
+			Blurb:   "Label an issue `mando` and the agent picks it up, opens a PR, comments the link on the issue, and moves it In Progress → In Review → Done/Canceled. Comment on the issue to steer.",
+			Secrets: []string{"linear-api-key", "linear-webhook-secret"},
+			Steps: []string{
+				"Create a personal API key: Linear → Settings → Security & access → Personal API keys → New key. Paste it into “Linear API key” below.",
+				"Create a label named “mando” in your workspace/team — adding it to an issue is what hands the work to the agent.",
+				"Create a webhook: Settings → API → Webhooks → New webhook. URL https://<your-host>/linear; subscribe to Issues + Comments; copy the signing secret into “Linear webhook signing secret” below.",
+				"Expose the connector's webhook port (default 8089) to the internet behind your TLS reverse proxy — Linear requires HTTPS. One proxy can front both webhook-rx (/webhook) and Linear (/linear).",
+				"Set the repo allowlist (LINEAR_REPO_ALLOWLIST) — the repos the agent may touch. The repo is inferred from each issue's text by a cheap LLM, grounded to this list; it asks on the issue when it can't tell.",
+				"Enable Linear in Connectors, then add the “mando” label to a to-do issue.",
+			},
+			Doc: "docs/linear.md",
+		},
 	}
 }
 

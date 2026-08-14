@@ -27,6 +27,9 @@ type slackNotifier struct {
 
 func (s *slackNotifier) Kind() string { return DefaultChatKind }
 
+// Advance is a no-op: Slack has no ticket state to move.
+func (s *slackNotifier) Advance(context.Context, Conversation, string) error { return nil }
+
 // NewSlackNotifier builds the Slack outbound connector from a bot token + default channel. Exported so
 // the connectors registry can construct it (mirrors NewTelegramNotifier).
 func NewSlackNotifier(token, defaultChannel string) Notifier {

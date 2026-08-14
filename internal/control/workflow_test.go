@@ -86,6 +86,44 @@ func (s *PRWorkflowSuite) Test_ReviewComment_Resume_Then_Merge() {
 	env.AssertExpectations(s.T())
 }
 
+// A Linear-conversation run advances the issue state at pr_opened (→ in_review) and at merge (→ done) via
+// the Kind-gated Advance seam. A non-Linear run never calls AdvanceConversation — proven by every other
+// test here staying green without mocking it (an unmocked call would fail them).
+func (s *PRWorkflowSuite) Test_LinearConversation_AdvancesIssueState() {
+	env := s.NewTestWorkflowEnvironment()
+	var a *control.Activities
+
+	env.OnActivity(a.PostMessage, mock.Anything, mock.Anything).
+		Return(control.NotifyResult{Thread: "iss_1", Channel: "iss_1"}, nil)
+	env.OnActivity(a.MintCredentials, mock.Anything, mock.Anything).
+		Return(control.Credentials{GitHubToken: "t"}, nil)
+	env.OnActivity(a.LaunchVM, mock.Anything, mock.Anything).
+		Return(control.LaunchResult{GuestIP: "10.0.0.2"}, nil)
+	env.OnActivity(a.RunAgentPhase, mock.Anything, mock.Anything).
+		Return(control.PhaseResult{Outcome: "pr_opened", PRNumber: 7, PRURL: "u", CostUSD: 0.5, Tokens: 100}, nil).Once()
+	env.OnActivity(a.FetchPRThread, mock.Anything, mock.Anything).Return([]control.ThreadComment{}, nil)
+	env.OnActivity(a.DestroyVM, mock.Anything, mock.Anything).Return(nil)
+
+	var stages []string
+	env.OnActivity(a.AdvanceConversation, mock.Anything, mock.Anything).
+		Return(func(_ context.Context, p control.AdvanceParams) error {
+			stages = append(stages, p.Stage)
+			return nil
+		})
+
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(control.SignalPRClosed, control.PRClosedSignal{Merged: true, DeliveryID: "d1"})
+	}, 200*time.Second)
+
+	in := baseInput()
+	in.Conversation = control.Conversation{Kind: "linear", Channel: "iss_1"}
+	env.ExecuteWorkflow(control.PRWorkflow, in)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.Equal([]string{"in_review", "done"}, stages, "pr_opened → in_review, merge → done")
+}
+
 // The thread reconcile folds in a human comment GitHub has but no webhook delivered (the dropped-
 // delivery safety net), while a comment already delivered by webhook is not re-fed.
 func (s *PRWorkflowSuite) Test_Reconcile_FoldsInMissedComment() {

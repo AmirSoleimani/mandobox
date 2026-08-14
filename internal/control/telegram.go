@@ -33,6 +33,9 @@ func NewTelegramNotifier(token, defaultChat string) Notifier {
 
 func (t *telegramNotifier) Kind() string { return "telegram" }
 
+// Advance is a no-op: Telegram has no ticket state to move.
+func (t *telegramNotifier) Advance(context.Context, Conversation, string) error { return nil }
+
 func (t *telegramNotifier) Post(ctx context.Context, conv Conversation, text string) (NotifyResult, error) {
 	if t.token == "" {
 		return NotifyResult{}, nil
