@@ -40,6 +40,49 @@ an allowlist of the repos you let the agent touch. If it can't tell, it asks on 
 > Add the label while the issue is still in a **to-do** column (Triage/Backlog/Todo). The connector only
 > picks up unstarted issues, so it doesn't re-grab something already In Progress or Done.
 
+## Exposing the webhook — Cloudflare Tunnel (recommended)
+
+Linear requires HTTPS. The cleanest way to give it a stable HTTPS URL is a **Cloudflare Tunnel** — an
+*outbound* connection from the box to Cloudflare's edge, so you open **no inbound port** and don't expose
+the origin IP. The repo ships a `cloudflared` Ansible role that runs it as a service and fronts both
+receivers (`/linear` → the connector, `/webhook` → GitHub's webhook-rx).
+
+One-time, on the controller (needs your Cloudflare account + a domain on Cloudflare):
+
+```bash
+cloudflared tunnel login                       # browser auth, once
+cloudflared tunnel create mando                # prints a tunnel UUID + writes ~/.cloudflared/<UUID>.json
+cp ~/.cloudflared/<UUID>.json secrets/cloudflared-credentials.json
+cloudflared tunnel route dns mando mando.example.com   # creates the CNAME
+```
+
+Then set these in your inventory and apply:
+
+```yaml
+cloudflared_hostname: mando.example.com
+cloudflared_tunnel_id: <UUID>
+```
+```bash
+ansible-playbook -i inventory/hosts.yml deploy.yml --tags cloudflared
+```
+
+Point the Linear webhook at `https://mando.example.com/linear`. The role installs `cloudflared`, drops the
+credentials (0600), templates the ingress config (`/linear` → `:8089`, `/webhook` → `:8088`), and runs it
+as `cloudflared.service`. It's optional — the role installs only when the credentials + hostname + tunnel
+id are set. (The connector no longer needs a public port, so you can set `LINEAR_WEBHOOK_ADDR=127.0.0.1:8089`
+to bind localhost-only.)
+
+**Two Cloudflare gotchas either way** (tunnel or a DNS-proxied reverse proxy):
+- **Don't let Cloudflare transform the request body.** The connector verifies an HMAC over the *raw* POST
+  bytes, so any body rewrite → `401`. A plain tunnel/proxy passes bodies through unchanged; just don't
+  enable body-altering features on that hostname.
+- **Bot/WAF rules can block Linear's server-to-server POSTs.** If deliveries start returning 401/403, add a
+  WAF skip rule for the `/linear` path (or allowlist Linear's webhook egress IPs).
+
+Verify: `curl https://mando.example.com/linear` should return **401** — that's the connector rejecting an
+unsigned request, which means the path reaches it. A Cloudflare error page instead means the tunnel isn't
+reaching `:8089` yet.
+
 ## Repo inference
 
 The prompt is the issue title + description. To choose the repo:

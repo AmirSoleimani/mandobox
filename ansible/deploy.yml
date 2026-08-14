@@ -25,3 +25,5 @@
       tags: [control_plane]
     - role: dashboard
       tags: [dashboard]
+    - role: cloudflared
+      tags: [cloudflared]

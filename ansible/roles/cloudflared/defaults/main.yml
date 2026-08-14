@@ -1,0 +1,15 @@
+---
+# Cloudflare Tunnel — gives the webhook receivers a stable HTTPS URL WITHOUT opening an inbound port (the
+# tunnel is an outbound connection to Cloudflare's edge). Ingress: /linear → the Linear connector (:8089),
+# /webhook → webhook-rx (GitHub, :8088). Optional: the role only installs/runs when a tunnel is configured
+# (credentials file present on the controller + hostname + tunnel id set).
+cloudflared_hostname: "" # e.g. mando.example.com — set in your inventory
+cloudflared_tunnel_id: "" # the tunnel UUID from `cloudflared tunnel create <name>`
+cloudflared_credentials_src: "{{ playbook_dir }}/../secrets/cloudflared-credentials.json"
+cloudflared_config_dir: /etc/cloudflared
+
+# The local services the tunnel fronts. The connector binds :8089 and webhook-rx :8088 on the box.
+cloudflared_linear_service: "http://localhost:8089"
+cloudflared_webhook_service: "http://localhost:8088"
+
+cloudflared_gpg_url: "https://pkg.cloudflare.com/cloudflare-main.gpg"

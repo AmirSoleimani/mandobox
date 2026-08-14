@@ -1,0 +1,17 @@
+# Managed by Ansible (cloudflared role). Ingress for the mando webhook receivers.
+# The tunnel is an OUTBOUND connection, so no inbound port is opened on the box.
+tunnel: {{ cloudflared_tunnel_id }}
+credentials-file: {{ cloudflared_config_dir }}/credentials.json
+no-autoupdate: true
+
+ingress:
+  # Linear webhooks → the Linear connector. Point the Linear webhook at https://{{ cloudflared_hostname }}/linear
+  - hostname: {{ cloudflared_hostname }}
+    path: ^/linear
+    service: {{ cloudflared_linear_service }}
+  # GitHub webhooks → webhook-rx (optional; point your GitHub App webhook here to route it through the tunnel too)
+  - hostname: {{ cloudflared_hostname }}
+    path: ^/webhook
+    service: {{ cloudflared_webhook_service }}
+  # Everything else on this hostname is refused.
+  - service: http_status:404

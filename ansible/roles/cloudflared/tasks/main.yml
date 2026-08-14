@@ -1,0 +1,84 @@
+---
+- name: Check whether a Cloudflare Tunnel credentials file exists on the controller
+  ansible.builtin.stat:
+    path: "{{ cloudflared_credentials_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: cloudflared_cred_stat
+
+- name: Decide whether the tunnel is configured
+  ansible.builtin.set_fact:
+    cloudflared_enabled: "{{ cloudflared_cred_stat.stat.exists and (cloudflared_hostname | length > 0) and (cloudflared_tunnel_id | length > 0) }}"
+
+- name: Cloudflare Tunnel — install and run (only when configured)
+  when: cloudflared_enabled
+  block:
+    - name: Install the Cloudflare package signing key
+      ansible.builtin.get_url:
+        url: "{{ cloudflared_gpg_url }}"
+        dest: /usr/share/keyrings/cloudflare-main.gpg
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Add the cloudflared apt repository
+      ansible.builtin.copy:
+        content: "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main\n"
+        dest: /etc/apt/sources.list.d/cloudflared.list
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install cloudflared
+      ansible.builtin.apt:
+        name: cloudflared
+        state: present
+        update_cache: true
+
+    - name: Create the cloudflared config directory
+      ansible.builtin.file:
+        path: "{{ cloudflared_config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install the tunnel credentials (Tier-0)
+      ansible.builtin.copy:
+        src: "{{ cloudflared_credentials_src }}"
+        dest: "{{ cloudflared_config_dir }}/credentials.json"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      notify: Restart cloudflared
+
+    - name: Install the tunnel config (ingress → /linear + /webhook)
+      ansible.builtin.template:
+        src: config.yml.j2
+        dest: "{{ cloudflared_config_dir }}/config.yml"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart cloudflared
+
+    - name: Install the cloudflared systemd unit
+      ansible.builtin.template:
+        src: cloudflared.service.j2
+        dest: /etc/systemd/system/cloudflared.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd daemon (cloudflared)
+        - Restart cloudflared
+
+    - name: Apply unit changes before enabling
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable and start cloudflared
+      ansible.builtin.systemd_service:
+        name: cloudflared
+        enabled: true
+        state: started
