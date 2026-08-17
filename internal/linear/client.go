@@ -232,6 +232,54 @@ func (c *Client) CreateComment(ctx context.Context, issueID, body string) (strin
 	return out.CommentCreate.Comment.ID, nil
 }
 
+// UploadFile uploads bytes to Linear's asset store (the two-step fileUpload flow) and returns the public
+// assetUrl to embed in a comment. Step 1: request a signed upload URL via the fileUpload mutation. Step 2:
+// PUT the bytes to that URL with the Content-Type plus the headers Linear returns.
+func (c *Client) UploadFile(ctx context.Context, filename, contentType string, data []byte) (string, error) {
+	const m = `mutation($contentType:String!,$filename:String!,$size:Int!){ ` +
+		`fileUpload(contentType:$contentType,filename:$filename,size:$size){ ` +
+		`success uploadFile{ uploadUrl assetUrl headers{ key value } } } }`
+	var out struct {
+		FileUpload struct {
+			Success    bool `json:"success"`
+			UploadFile struct {
+				UploadURL string `json:"uploadUrl"`
+				AssetURL  string `json:"assetUrl"`
+				Headers   []struct {
+					Key   string `json:"key"`
+					Value string `json:"value"`
+				} `json:"headers"`
+			} `json:"uploadFile"`
+		} `json:"fileUpload"`
+	}
+	vars := map[string]any{"contentType": contentType, "filename": filename, "size": len(data)}
+	if err := c.graphql(ctx, m, vars, &out); err != nil {
+		return "", err
+	}
+	uf := out.FileUpload.UploadFile
+	if !out.FileUpload.Success || uf.UploadURL == "" || uf.AssetURL == "" {
+		return "", fmt.Errorf("linear: fileUpload returned no upload URL")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uf.UploadURL, bytes.NewReader(data))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", contentType)
+	for _, h := range uf.Headers { // the signed URL requires exactly these headers
+		req.Header.Set(h.Key, h.Value)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return "", fmt.Errorf("linear: asset PUT http %s: %s", resp.Status, clip(string(raw), 200))
+	}
+	return uf.AssetURL, nil
+}
+
 // UpdateComment edits a comment body in place; no-op on an empty id.
 func (c *Client) UpdateComment(ctx context.Context, commentID, body string) error {
 	if commentID == "" {

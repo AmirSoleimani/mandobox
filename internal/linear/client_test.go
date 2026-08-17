@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -113,5 +114,36 @@ func TestHasLabel(t *testing.T) {
 	iss := &Issue{Labels: []Label{{Name: "Bug"}, {Name: "mando"}}}
 	if !iss.HasLabel("mando") || !iss.HasLabel("MANDO") || iss.HasLabel("feature") {
 		t.Error("HasLabel case-insensitive match wrong")
+	}
+}
+
+func TestUploadFile(t *testing.T) {
+	var putBody []byte
+	putHit := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut { // step 2: the signed-URL PUT (pointed back at this server)
+			putHit = true
+			putBody, _ = io.ReadAll(r.Body)
+			if r.Header.Get("X-Test") != "1" || r.Header.Get("Content-Type") != "image/png" {
+				t.Errorf("PUT missing required headers: %v", r.Header)
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		// step 1: the fileUpload mutation — hand back an uploadUrl on this same server + an assetUrl.
+		_, _ = io.WriteString(w, `{"data":{"fileUpload":{"success":true,"uploadFile":{"uploadUrl":"http://`+r.Host+`/put","assetUrl":"https://uploads.linear.app/x.png","headers":[{"key":"X-Test","value":"1"}]}}}}`)
+	}))
+	defer srv.Close()
+	c := New("k")
+	c.url = srv.URL
+	asset, err := c.UploadFile(context.Background(), "shot.png", "image/png", []byte("PNGDATA"))
+	if err != nil {
+		t.Fatalf("UploadFile: %v", err)
+	}
+	if asset != "https://uploads.linear.app/x.png" {
+		t.Errorf("assetURL = %q", asset)
+	}
+	if !putHit || string(putBody) != "PNGDATA" {
+		t.Errorf("PUT hit=%v body=%q", putHit, string(putBody))
 	}
 }

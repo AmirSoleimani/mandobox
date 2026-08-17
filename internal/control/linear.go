@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"strings"
 
 	"github.com/AmirSoleimani/mandobox/internal/linear"
 )
@@ -11,6 +12,7 @@ type linearAPI interface {
 	CreateComment(ctx context.Context, issueID, body string) (string, error)
 	UpdateComment(ctx context.Context, commentID, body string) error
 	MoveState(ctx context.Context, issueID, stage string) error
+	UploadFile(ctx context.Context, filename, contentType string, data []byte) (string, error)
 }
 
 // linearNotifier is the Linear connector's outbound half: it posts comments on the issue and moves the
@@ -44,9 +46,21 @@ func (l *linearNotifier) Update(ctx context.Context, conv Conversation, messageI
 	return l.client.UpdateComment(ctx, messageID, canonicalToLinearMarkdown(text))
 }
 
-// PostImage is a no-op: Linear image upload (signed-URL fileUpload flow) is a future enhancement.
-func (l *linearNotifier) PostImage(context.Context, Conversation, string, []byte, string) (string, error) {
-	return "", nil
+// PostImage uploads the PNG to Linear's asset store and posts it as a comment on the issue, with the caption
+// (if any) above the embedded image. Best-effort: the caller treats an error as non-fatal.
+func (l *linearNotifier) PostImage(ctx context.Context, conv Conversation, caption string, png []byte, filename string) (string, error) {
+	if filename == "" {
+		filename = "screenshot.png"
+	}
+	assetURL, err := l.client.UploadFile(ctx, filename, "image/png", png)
+	if err != nil {
+		return "", err
+	}
+	body := "![" + filename + "](" + assetURL + ")"
+	if c := canonicalToLinearMarkdown(strings.TrimSpace(caption)); c != "" {
+		body = c + "\n\n" + body
+	}
+	return l.client.CreateComment(ctx, linearIssueID(conv), body)
 }
 
 // Advance moves the issue to the workflow state for a lifecycle stage.

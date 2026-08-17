@@ -23,8 +23,9 @@ func TestCanonicalToLinearMarkdown(t *testing.T) {
 }
 
 type fakeLinear struct {
-	commentBody string
-	moved       []string
+	commentBody  string
+	moved        []string
+	uploadedName string
 }
 
 func (f *fakeLinear) CreateComment(_ context.Context, _, body string) (string, error) {
@@ -35,6 +36,10 @@ func (f *fakeLinear) UpdateComment(context.Context, string, string) error { retu
 func (f *fakeLinear) MoveState(_ context.Context, _, stage string) error {
 	f.moved = append(f.moved, stage)
 	return nil
+}
+func (f *fakeLinear) UploadFile(_ context.Context, filename, _ string, _ []byte) (string, error) {
+	f.uploadedName = filename
+	return "https://uploads.linear.app/" + filename, nil
 }
 
 func TestLinearNotifier(t *testing.T) {
@@ -60,8 +65,15 @@ func TestLinearNotifier(t *testing.T) {
 		t.Errorf("moved = %v, want [in_review done]", f.moved)
 	}
 
-	// PostImage is a graceful no-op.
-	if id, err := n.PostImage(context.Background(), Conversation{}, "", nil, ""); id != "" || err != nil {
-		t.Errorf("PostImage = (%q,%v), want empty no-op", id, err)
+	// PostImage uploads the PNG and embeds it in a comment, caption (translated) above the image.
+	id, err := n.PostImage(context.Background(), Conversation{Kind: "linear", Channel: "iss_9"}, ":tada: *shot*", []byte("PNG"), "shot.png")
+	if err != nil || id != "cmt_1" {
+		t.Fatalf("PostImage = (%q,%v)", id, err)
+	}
+	if f.uploadedName != "shot.png" {
+		t.Errorf("uploaded filename = %q", f.uploadedName)
+	}
+	if want := "🎉 **shot**\n\n![shot.png](https://uploads.linear.app/shot.png)"; f.commentBody != want {
+		t.Errorf("image comment body = %q, want %q", f.commentBody, want)
 	}
 }
