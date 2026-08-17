@@ -1,0 +1,17 @@
+# Managed by Ansible (caddy role). Auto-TLS (Let's Encrypt) + reverse proxy for the mando webhook
+# receivers. Caddy's reverse_proxy passes the request body through unchanged, so the connector's
+# raw-body HMAC verification is unaffected.
+{{ caddy_hostname }} {
+	# Linear webhooks → the Linear connector. Point the Linear webhook at https://{{ caddy_hostname }}/linear
+	handle /linear* {
+		reverse_proxy {{ caddy_linear_service }}
+	}
+	# GitHub webhooks → webhook-rx (optional; point your GitHub App webhook here to route it through Caddy too)
+	handle /webhook* {
+		reverse_proxy {{ caddy_webhook_service }}
+	}
+	# Everything else on this hostname is refused.
+	handle {
+		respond 404
+	}
+}

@@ -40,11 +40,24 @@ an allowlist of the repos you let the agent touch. If it can't tell, it asks on 
 > Add the label while the issue is still in a **to-do** column (Triage/Backlog/Todo). The connector only
 > picks up unstarted issues, so it doesn't re-grab something already In Progress or Done.
 
-## Exposing the webhook — Cloudflare Tunnel (recommended)
+## Exposing the webhook (HTTPS) — pick one
 
-Linear requires HTTPS. The cleanest way to give it a stable HTTPS URL is a **Cloudflare Tunnel** — an
-*outbound* connection from the box to Cloudflare's edge, so you open **no inbound port** and don't expose
-the origin IP. The repo ships a `cloudflared` Ansible role that runs it as a service and fronts both
+Linear requires HTTPS. The connector just serves plain HTTP on `:8089` and verifies an HMAC — it's agnostic
+to how TLS is terminated in front of it, so there's no lock-in. The repo ships **two** optional Ansible
+roles; pick whichever fits (they're mutually exclusive for a given hostname):
+
+| | **A — Cloudflare Tunnel** (`--tags cloudflared`) | **B — Caddy** (`--tags caddy`) |
+|---|---|---|
+| Inbound port | none opened (outbound tunnel) | you open **80 + 443** |
+| Origin IP | hidden | exposed |
+| DNS | domain on **Cloudflare** DNS | **any** DNS (A record → box) |
+| Third party | Cloudflare | just Let's Encrypt |
+| Body transform risk | see gotchas below | none (clean passthrough) |
+
+### Option A — Cloudflare Tunnel
+
+A **Cloudflare Tunnel** is an *outbound* connection from the box to Cloudflare's edge, so you open **no
+inbound port** and don't expose the origin IP. The `cloudflared` role runs it as a service and fronts both
 receivers (`/linear` → the connector, `/webhook` → GitHub's webhook-rx).
 
 One-time, on the controller (needs your Cloudflare account + a domain on Cloudflare):
@@ -72,16 +85,36 @@ as `cloudflared.service`. It's optional — the role installs only when the cred
 id are set. (The connector no longer needs a public port, so you can set `LINEAR_WEBHOOK_ADDR=127.0.0.1:8089`
 to bind localhost-only.)
 
-**Two Cloudflare gotchas either way** (tunnel or a DNS-proxied reverse proxy):
+**Two Cloudflare-specific gotchas** (Option A only):
 - **Don't let Cloudflare transform the request body.** The connector verifies an HMAC over the *raw* POST
-  bytes, so any body rewrite → `401`. A plain tunnel/proxy passes bodies through unchanged; just don't
-  enable body-altering features on that hostname.
+  bytes, so any body rewrite → `401`. A plain tunnel passes bodies through unchanged; just don't enable
+  body-altering features on that hostname.
 - **Bot/WAF rules can block Linear's server-to-server POSTs.** If deliveries start returning 401/403, add a
   WAF skip rule for the `/linear` path (or allowlist Linear's webhook egress IPs).
 
-Verify: `curl https://mando.example.com/linear` should return **401** — that's the connector rejecting an
-unsigned request, which means the path reaches it. A Cloudflare error page instead means the tunnel isn't
-reaching `:8089` yet.
+### Option B — Caddy (self-hosted)
+
+Caddy is a reverse proxy that auto-provisions a Let's Encrypt cert and forwards `/linear` → `:8089` and
+`/webhook` → `:8088`. No third party beyond the CA, and its `reverse_proxy` passes the body through
+untouched (so no HMAC gotcha). You open **80 + 443** at your cloud firewall and add a DNS **A record** for
+the hostname → the box (any DNS provider). Set the hostname and apply:
+
+```yaml
+caddy_hostname: mando.example.com
+```
+```bash
+ansible-playbook -i inventory/hosts.yml deploy.yml --tags caddy
+```
+
+The role installs Caddy from its signed apt repo, writes `/etc/caddy/Caddyfile`, and runs `caddy.service`
+(the cert is obtained automatically on the first request). Point the Linear webhook at
+`https://mando.example.com/linear`.
+
+### Verify (either option)
+
+`curl https://mando.example.com/linear` should return **401** — that's the *connector* rejecting an unsigned
+request, which means the path reaches it. Anything else (a tunnel/proxy error page or a timeout) means TLS
+isn't reaching `:8089` yet.
 
 ## Repo inference
 

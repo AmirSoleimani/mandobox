@@ -27,3 +27,5 @@
       tags: [dashboard]
     - role: cloudflared
       tags: [cloudflared]
+    - role: caddy
+      tags: [caddy]

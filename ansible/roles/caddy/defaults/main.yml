@@ -1,0 +1,16 @@
+---
+# Caddy reverse proxy — the self-hosted HTTPS ingress option (no third party beyond Let's Encrypt).
+# Auto-provisions a TLS cert for your hostname and reverse-proxies /linear → the Linear connector (:8089)
+# and /webhook → webhook-rx (GitHub, :8088). Optional: the role installs/runs only when caddy_hostname is
+# set. Requires a DNS A record for the hostname → the box, and inbound 80 + 443 open at your cloud firewall.
+#
+# Pick EITHER this OR the cloudflared tunnel for a given hostname — not both (a hostname can't be both an
+# A record to the box and a CNAME to a tunnel). Caddy trades "open 80/443 + expose the box IP" for
+# "fully self-hosted, any DNS provider".
+caddy_hostname: "" # e.g. mando.example.com — set in your inventory
+
+caddy_linear_service: "localhost:8089"
+caddy_webhook_service: "localhost:8088"
+
+caddy_gpg_url: "https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
+caddy_repo_url: "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt"

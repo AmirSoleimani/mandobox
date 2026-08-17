@@ -1,0 +1,61 @@
+---
+- name: Decide whether Caddy ingress is configured
+  ansible.builtin.set_fact:
+    caddy_enabled: "{{ caddy_hostname | length > 0 }}"
+
+- name: Caddy — install and run (only when a hostname is set)
+  when: caddy_enabled
+  block:
+    - name: Ensure apt prerequisites for the Caddy repo
+      ansible.builtin.apt:
+        name:
+          - debian-keyring
+          - debian-archive-keyring
+          - apt-transport-https
+          - gnupg
+        state: present
+        update_cache: true
+
+    - name: Download the Caddy signing key (armored)
+      ansible.builtin.get_url:
+        url: "{{ caddy_gpg_url }}"
+        dest: /usr/share/keyrings/caddy-stable.asc
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install the dearmored Caddy signing key
+      ansible.builtin.command:
+        cmd: gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg /usr/share/keyrings/caddy-stable.asc
+        creates: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+
+    - name: Add the Caddy apt repository
+      ansible.builtin.get_url:
+        url: "{{ caddy_repo_url }}"
+        dest: /etc/apt/sources.list.d/caddy-stable.list
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install caddy
+      ansible.builtin.apt:
+        name: caddy
+        state: present
+        update_cache: true
+
+    # apt installs caddy.service (User=caddy, CAP_NET_BIND_SERVICE) + /etc/caddy/Caddyfile. We just replace
+    # the default Caddyfile with our reverse-proxy config and reload.
+    - name: Install the Caddyfile (ingress → /linear + /webhook, auto-TLS)
+      ansible.builtin.template:
+        src: Caddyfile.j2
+        dest: /etc/caddy/Caddyfile
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload caddy
+
+    - name: Enable and start caddy
+      ansible.builtin.systemd_service:
+        name: caddy
+        enabled: true
+        state: started
