@@ -138,6 +138,41 @@ the planned management dashboard will drive.
 Follow [`github-setup.md`](github-setup.md): create the App under your GitHub org, install on
 target repos, set branch protection + the `agent/*` ruleset. Needed for real PR runs.
 
+## Webhook ingress (HTTPS)
+
+Two receivers listen on the box for inbound webhooks: **webhook-rx** on `:8088` (GitHub PR reviews /
+comments / CI → the agent) and, when the **Linear** connector is enabled, the connector on `:8089` (labelled
+issues → new tasks). Both need a **public HTTPS URL**. *(Slack/Telegram connect outbound, so if you only use
+those + the dashboard, you can skip this.)*
+
+Two optional, **mutually-exclusive** Ansible roles provide it — pick one per hostname. Both front the same
+paths: `https://<host>/webhook` → `:8088` (GitHub) and `https://<host>/linear` → `:8089` (Linear).
+
+| | **Cloudflare Tunnel** (`--tags cloudflared`) | **Caddy** (`--tags caddy`) |
+|---|---|---|
+| Inbound port | none opened (outbound tunnel) | you open **80 + 443** |
+| Origin IP | hidden | exposed |
+| DNS | domain on **Cloudflare** | **any** provider (A record → box) |
+| Dependency | Cloudflare | Let's Encrypt (the CA) |
+
+**Cloudflare Tunnel** — one-time on the controller (needs a Cloudflare account + a domain on Cloudflare DNS):
+
+```bash
+cloudflared tunnel login                     # browser auth, once
+cloudflared tunnel create mando              # → a tunnel UUID + ~/.cloudflared/<UUID>.json
+cp ~/.cloudflared/<UUID>.json secrets/cloudflared-credentials.json
+cloudflared tunnel route dns mando mando.example.com   # creates the CNAME
+```
+Then set `cloudflared_hostname` + `cloudflared_tunnel_id` in your inventory and
+`ansible-playbook -i inventory/<inv>.yml deploy.yml --tags cloudflared`.
+
+**Caddy** (self-hosted, any DNS) — add an A record for the hostname → the box, open 80 + 443 at your cloud
+firewall, set `caddy_hostname` in your inventory, and `ansible-playbook … deploy.yml --tags caddy`. It
+obtains a Let's Encrypt cert automatically.
+
+**Verify:** `curl https://<host>/linear` returns **401** (the connector rejecting an unsigned request = the
+path reaches it). Linear-side setup + the Cloudflare body/WAF gotchas: [`linear.md`](linear.md).
+
 ## 8. Dispatch a task by hand
 
 `scripts/dispatch-vm.sh` POSTs a launch to mando-agent. It needs a **GitHub installation
@@ -179,7 +214,7 @@ temporal,control_plane` (prerequisites on the controller: `make dist`; the GitHu
 | temporal | 127.0.0.1:7233 (gRPC) | workflow engine, namespace `fleet` |
 | temporal-ui | 127.0.0.1:8233 | Web UI — `ssh -L 8233:127.0.0.1:8233 root@<host>` |
 | mando-worker | — | hosts PRWorkflow + activities (task queue `fleet-pr`) |
-| webhook-rx | 127.0.0.1:8088 | GitHub webhooks → Temporal signals (needs a public ingress/tunnel) |
+| webhook-rx | 127.0.0.1:8088 | GitHub webhooks → Temporal signals (needs [public ingress](#webhook-ingress-https)) |
 | nats-bridge | — | archives guest event/log streams to `/var/lib/fleet/logs` |
 
 **Dispatch a task:** open the dashboard (`ssh -L 8087:127.0.0.1:8087 root@<host>` → `http://localhost:8087`)
