@@ -77,7 +77,13 @@ type ResolvedProvider struct {
 // the OAuth token when the active provider is subscription-based. If the config file is absent it
 // falls back to the legacy agent-auth toggle (subscription|api_key) so an in-place upgrade is safe.
 func (a *Activities) resolveProvider() ResolvedProvider {
-	active, overrides := a.readProviderSelection()
+	return resolveProviderFromPaths(a.ProviderConfigPath, a.OAuthTokenPath, a.AuthModePath)
+}
+
+// resolveProviderFromPaths is the path-based core of resolveProvider, so a host-side caller outside the
+// worker (e.g. a connector) can resolve the same active provider from the same files — see HelperLLMFromPaths.
+func resolveProviderFromPaths(providerConfigPath, oauthTokenPath, authModePath string) ResolvedProvider {
+	active, overrides := readProviderSelection(providerConfigPath, authModePath)
 	def, ok := providerDef(active)
 	if !ok {
 		def, _ = providerDef(ProviderClaudeAPI) // safe default: gateway + API key
@@ -95,14 +101,14 @@ func (a *Activities) resolveProvider() ResolvedProvider {
 		}
 	}
 	if def.Subscription {
-		r.OAuthToken = readTrimmedFile(a.OAuthTokenPath)
+		r.OAuthToken = readTrimmedFile(oauthTokenPath)
 	}
 	return r
 }
 
-func (a *Activities) readProviderSelection() (ProviderID, map[ProviderID]providerOverrides) {
-	if a.ProviderConfigPath != "" {
-		if raw, err := os.ReadFile(a.ProviderConfigPath); err == nil {
+func readProviderSelection(providerConfigPath, authModePath string) (ProviderID, map[ProviderID]providerOverrides) {
+	if providerConfigPath != "" {
+		if raw, err := os.ReadFile(providerConfigPath); err == nil {
 			var pf providerFile
 			if json.Unmarshal(raw, &pf) == nil && pf.Active != "" {
 				return pf.Active, pf.Providers
@@ -111,10 +117,18 @@ func (a *Activities) readProviderSelection() (ProviderID, map[ProviderID]provide
 	}
 	// Legacy fallback: the pre-provider agent-auth toggle, so upgrading before the dashboard writes
 	// provider.json keeps the current behavior.
-	if readTrimmedFile(a.AuthModePath) == "subscription" {
+	if readTrimmedFile(authModePath) == "subscription" {
 		return ProviderClaudeSubscription, nil
 	}
 	return ProviderClaudeAPI, nil
+}
+
+// HelperLLMFromPaths resolves the (baseURL, token, model) a host-side cheap LLM call should use, from the
+// same provider config the worker reads — so a separate process (a connector) routes identically:
+// subscription → Anthropic direct on the OAuth token; API-key → the gateway. Paths mirror the worker's
+// (MANDO_PROVIDER_CONFIG / MANDO_CLAUDE_OAUTH_TOKEN / MANDO_AGENT_AUTH, or the /etc/fleet defaults).
+func HelperLLMFromPaths(providerConfigPath, oauthTokenPath, authModePath, gatewayURL string) (baseURL, token, model string) {
+	return resolveProviderFromPaths(providerConfigPath, oauthTokenPath, authModePath).helperLLM(gatewayURL)
 }
 
 // helperLLM returns the endpoint, bearer token, and model a HOST-SIDE helper call (intent

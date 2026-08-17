@@ -54,8 +54,9 @@ and the work it does are pluggable, not baked in.*
 
 ## How it works
 
-1. **You ask** — from Slack, Telegram, or the dashboard, pointing at a repo and describing the change.
-   Add `--plan` and it proposes an approach for you to refine and approve before it writes any code.
+1. **You ask** — from Slack, Telegram, the dashboard, or by labelling a Linear issue, pointing at a repo
+   and describing the change (Linear infers the repo from the issue text). Add `--plan` and it proposes an
+   approach for you to refine and approve before it writes any code.
 2. **It isolates** — a fresh, locked-down micro-VM boots just for this task.
 3. **The agent works** — reads the repo, makes the change, runs the tests, and writes an honest
    summary, *including what it's unsure about.*
@@ -71,7 +72,7 @@ and the work it does are pluggable, not baked in.*
 - **One throwaway computer per task.** Each job runs in an isolated micro-VM, destroyed after. Agents
   can't see each other and only reach the parts of the internet you allow.
 - **It runs in parallel.** Many tasks side by side, without stepping on each other.
-- **You talk to it where you already work** — Slack, Telegram, GitHub, or a browser control room.
+- **You talk to it where you already work** — Slack, Telegram, Linear, GitHub, or a browser control room.
 
 ## The control room
 
@@ -94,7 +95,7 @@ and manage models, connectors, costs, health, and secrets from one place.
 
 ## Roadmap
 
-Anything that can describe a task can start one — today that's Slack, Telegram, GitHub, and the dashboard.
+Anything that can describe a task can start one — today that's Slack, Telegram, Linear, GitHub, and the dashboard.
 Next, we want work to reach the fleet from wherever it already lives, no new habits required
 (**planned/exploring**, not shipped):
 

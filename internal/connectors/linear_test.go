@@ -84,6 +84,59 @@ func TestResolveRepo(t *testing.T) {
 	if r, ok := c.resolveRepo(ctx, &linear.Issue{Title: "x"}); ok {
 		t.Fatalf("unresolved must be ok=false, got (%q,%v)", r, ok)
 	}
+
+	// No allowlist → free-form inference. A full owner/repo slug passes through.
+	full := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"acme/widgets"}]}`))
+	}))
+	defer full.Close()
+	c = &linearConnector{}
+	c.llm = llm.New(full.URL, "t", "m")
+	if r, ok := c.resolveRepo(ctx, &linear.Issue{Title: "x"}); !ok || r != "acme/widgets" {
+		t.Fatalf("free-form full = (%q,%v), want acme/widgets", r, ok)
+	}
+
+	// No allowlist: a bare repo name is not a slug → ask (issues must name owner/repo, never guess).
+	bare := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"Dashboard"}]}`))
+	}))
+	defer bare.Close()
+	c = &linearConnector{}
+	c.llm = llm.New(bare.URL, "t", "m")
+	if r, ok := c.resolveRepo(ctx, &linear.Issue{Title: "x"}); ok {
+		t.Fatalf("bare name must be ok=false, got (%q,%v)", r, ok)
+	}
+
+	// No allowlist: UNRESOLVED → ask.
+	c = &linearConnector{}
+	c.llm = llm.New(unres.URL, "t", "m")
+	if r, ok := c.resolveRepo(ctx, &linear.Issue{Title: "x"}); ok {
+		t.Fatalf("free-form unresolved must be ok=false, got (%q,%v)", r, ok)
+	}
+}
+
+func TestNormalizeRepoAnswer(t *testing.T) {
+	cases := []struct {
+		ans, want string
+		ok        bool
+	}{
+		{"acme/widgets", "acme/widgets", true},
+		{"`acme/widgets`", "acme/widgets", true}, // decoration stripped
+		{"dashboard", "", false},                 // bare name → not a slug → miss (issues name owner/repo)
+		{"UNRESOLVED", "", false},
+		{"unresolved", "", false},
+		{"", "", false},
+		{"a/b/c", "", false},         // too many segments
+		{"acme/", "", false},         // empty repo
+		{"/widgets", "", false},      // empty owner
+		{"acme/wid gets", "", false}, // illegal char
+	}
+	for _, c := range cases {
+		got, ok := normalizeRepoAnswer(c.ans)
+		if got != c.want || ok != c.ok {
+			t.Errorf("normalizeRepoAnswer(%q) = (%q,%v), want (%q,%v)", c.ans, got, ok, c.want, c.ok)
+		}
+	}
 }
 
 func TestAlreadyAsked(t *testing.T) {

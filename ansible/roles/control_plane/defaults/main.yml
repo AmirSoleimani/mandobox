@@ -46,10 +46,12 @@ control_plane_slack_channel_src: "{{ playbook_dir }}/../secrets/slack-channel"
 control_plane_telegram_bot_token_src: "{{ playbook_dir }}/../secrets/telegram-bot-token"
 control_plane_telegram_chat_src: "{{ playbook_dir }}/../secrets/telegram-chat"
 # Linear connector (optional): a personal API key + webhook signing secret enable it. The repo is inferred
-# from each issue's text by a cheap LLM, grounded to this allowlist (the repos the agent may touch).
+# from each issue's text by a cheap LLM (name it as owner/repo); the GitHub App's installed repos are the
+# boundary. The allowlist below is OPTIONAL — leave it empty to let the LLM name any App-installed repo, or
+# set it to narrow the agent to a specific list (then the LLM must pick one of these).
 control_plane_linear_api_key_src: "{{ playbook_dir }}/../secrets/linear-api-key"
 control_plane_linear_webhook_secret_src: "{{ playbook_dir }}/../secrets/linear-webhook-secret"
-control_plane_linear_repo_allowlist: []
+control_plane_linear_repo_allowlist: [] # optional: restrict inference to these owner/name repos
 control_plane_linear_default_repo: ""
 control_plane_linear_webhook_addr: "0.0.0.0:8089"
 

@@ -4,8 +4,10 @@ Label a Linear issue **`mando`** and the agent picks it up, opens a PR, comments
 issue, and moves the issue through your workflow — **In Progress → In Review → Done/Canceled**. Comment on
 the issue to steer the run, exactly like replying in a chat thread.
 
-The repo the PR lands in is **inferred from the issue's title and description by a cheap LLM**, grounded to
-an allowlist of the repos you let the agent touch. If it can't tell, it asks on the issue instead of guessing.
+The repo the PR lands in is **inferred from the issue's title and description by a cheap LLM** — name it in
+the issue as `owner/repo`. The **GitHub App's installed repos are the boundary**: the agent can only ever
+touch repos the App can reach, and one it can't reach fails visibly on the issue. If the LLM can't tell which
+repo, it asks instead of guessing.
 
 ## What you get
 
@@ -14,13 +16,19 @@ an allowlist of the repos you let the agent touch. If it can't tell, it asks on 
 - **PR link** — when the PR opens, the agent comments the link on the issue and moves it to *In Review*.
 - **Steering** — a comment on the issue is delivered to the run as a message (the same natural-language
   steering you get from Slack/Telegram/PR comments).
+- **Screenshots** — when the task changes the UI, the agent uploads before/after screenshots as comments on
+  the issue (the same visual self-verification it posts in chat).
 - **Close-out** — merging the PR moves the issue to *Done*; closing it without merging moves it to *Canceled*.
 
 ## Setup
 
-1. **API key.** Linear → Settings → Security & access → Personal API keys → *New key*. Paste it into the
-   dashboard secret **Linear API key** (or `secrets/linear-api-key` for an Ansible deploy). The worker uses
-   it to comment + move states; the connector uses it to read issues and verify itself.
+1. **API key — use a dedicated bot user, not your personal account.** The connector authenticates *as*
+   whoever owns this key and ignores comments from its own identity (to avoid an echo loop). A personal key
+   makes the bot *you* — your own replies get dropped as "its own" and every bot comment posts under your
+   name. Invite a new member (a `you+mando@example.com` alias is fine), name it *mando*, add it to the team,
+   and from **that** account create the key: Settings → Security & access → Personal API keys → *New key*.
+   Paste it into the dashboard secret **Linear API key** (or `secrets/linear-api-key` for an Ansible deploy).
+   The worker uses it to comment + move states; the connector uses it to read issues and identify itself.
 2. **The `mando` label.** Create a label named `mando` in your workspace/team. Adding it to an issue is what
    hands the work over.
 3. **Webhook.** Linear → Settings → API → Webhooks → *New webhook*:
@@ -31,10 +39,11 @@ an allowlist of the repos you let the agent touch. If it can't tell, it asks on 
 4. **Public ingress.** The connector serves the webhook on `LINEAR_WEBHOOK_ADDR` (default `0.0.0.0:8089`).
    Linear requires HTTPS, so open that port at your cloud firewall and front it with your TLS reverse proxy.
    One proxy can front both receivers: `/webhook` → `webhook-rx` (:8088), `/linear` → this connector (:8089).
-5. **Repo allowlist.** Set `LINEAR_REPO_ALLOWLIST` to the `owner/name` repos the agent may work on
-   (space/comma-separated). This both grounds the LLM's repo inference and validates its answer — the agent
-   never dispatches to a repo outside this list. Optionally set `LINEAR_DEFAULT_REPO` for when a repo can't
-   be inferred (otherwise it asks on the issue).
+5. **Repo scope (optional).** By default the repo is inferred by the LLM and bounded only by which repos your
+   GitHub App is installed on — no config needed. To *restrict* the agent to a specific set, set
+   `LINEAR_REPO_ALLOWLIST` to the `owner/name` repos it may work on (space/comma-separated); the LLM then must
+   pick one of them and the answer is validated against the list. Optionally set `LINEAR_DEFAULT_REPO` for a
+   fixed fallback when a repo can't be inferred.
 6. **Enable** Linear in the dashboard **Connectors** page, then add the `mando` label to a to-do issue.
 
 > Add the label while the issue is still in a **to-do** column (Triage/Backlog/Todo). The connector only
@@ -66,21 +75,26 @@ path reaches it.
 
 The prompt is the issue title + description. To choose the repo:
 
+- **No allowlist** (default) → a cheap model reads the issue and names the repo as `owner/repo` (the issue is
+  expected to name it explicitly). The GitHub App's installed repos are the boundary — one it can't reach
+  fails visibly on the issue (`:x: Run failed…`). If it can't name a well-formed `owner/repo` → a clarifying
+  comment and **no dispatch**.
 - **1 repo in the allowlist** → it's used (no LLM call).
-- **Several** → a cheap model picks the single best match *from the allowlist* (recent human comments are
-  included as context); the answer is validated against the list. Anything uncertain → the default repo if
-  set, otherwise a clarifying comment on the issue and **no dispatch**. Reply on the issue and it re-tries.
+- **Several in the allowlist** → the model picks the single best match *from the list* (recent human comments
+  are included as context) and the answer is validated against it; uncertain → the default repo if set,
+  otherwise it asks. Never dispatches to a repo outside the list.
 
-Fail-safe: dispatching to the wrong codebase is the dangerous outcome, so the agent asks rather than guess.
+Either way, reply on the issue with the repo and it re-tries. Dispatching to the wrong codebase is the
+outcome to avoid, so the agent asks rather than guess a malformed slug.
 
 ## Security model
 
 Adding the `mando` label is full trigger authority: **anyone who can label an issue can start an agent
 run**, and the issue's title/description become the agent's prompt. Two consequences to size for:
 
-- **The allowlist is the blast radius.** The repo is validated against `LINEAR_REPO_ALLOWLIST`, so a run can
-  only ever touch repos you approved — but a crafted issue *can* steer the inference toward a different
-  *allowlisted* repo. Keep the allowlist to repos you're comfortable any labeler running the agent against.
+- **The GitHub App installation is the blast radius.** A run can only ever touch repos the App is installed
+  on, so *that installation is your control surface* — install the App only on repos you're comfortable any
+  labeler running the agent against. (Setting `LINEAR_REPO_ALLOWLIST` narrows it further, to a subset.)
 - **Workspace membership = who can dispatch.** Treat "can label issues in this workspace" as "can run the
   agent." Deliveries are HMAC-verified so only Linear can reach the endpoint, but authorization *within*
   Linear is your workspace's membership.
@@ -107,8 +121,8 @@ boards. If a team has no matching state, the move is simply skipped (never an er
 | `LINEAR_API_KEY` | `linear.env` (0600) | worker + connector; personal API key |
 | `LINEAR_WEBHOOK_SECRET` | `linear.env` | connector; HMAC secret to verify deliveries |
 | `LINEAR_WEBHOOK_ADDR` | `linear.env` | connector listen address (default `0.0.0.0:8089`) |
-| `LINEAR_REPO_ALLOWLIST` | `linear.env` | repos the agent may touch (grounds + validates inference) |
-| `LINEAR_DEFAULT_REPO` | `linear.env` | optional fallback repo when inference is unclear |
+| `LINEAR_REPO_ALLOWLIST` | `linear.env` | *optional* — restrict inference to these `owner/name` repos |
+| `LINEAR_DEFAULT_REPO` | `linear.env` | *optional* — fixed fallback repo when inference is unclear |
 
 The API key + webhook secret are Tier-0: host-side only, never injected into a guest VM.
 
@@ -116,12 +130,15 @@ The API key + webhook secret are Tier-0: host-side only, never injected into a g
 
 - **401 on deliveries** — the signing secret doesn't match, or a proxy is altering the request body (the
   HMAC is over the raw bytes). Check the secret and that the proxy passes the body through unmodified.
-- **Issue not picked up** — check it has the `mando` label, is in a *to-do* state, the repo is in the
-  allowlist, and Linear is enabled in Connectors. `journalctl -u mando-connectors` shows the decision.
-- **It keeps asking which repo** — the LLM can't map the issue to an allowlisted repo; make the title/first
-  line name the repo, add it to the allowlist, or set `LINEAR_DEFAULT_REPO`.
-- **Comments don't steer** — the connector needs to resolve its own user id at startup to avoid echoing its
-  own comments; if it can't (bad key), it disables comment steering (fail-closed) and logs it. Dispatch
-  still works.
-- **On a subscription-only box** (no provider API key), the repo resolver has no cheap model to call, so it
-  asks on every issue. Use a single-repo allowlist (which skips the LLM) or run with an API-key provider.
+- **Issue not picked up** — check it has the `mando` label, is in a *to-do* state, and Linear is enabled in
+  Connectors (and if you set an allowlist, that the repo is in it). `journalctl -u mando-connectors` shows the decision.
+- **It keeps asking which repo** — the LLM couldn't name a well-formed `owner/repo` from the issue; put an
+  explicit `owner/repo` in the title/first line, or set `LINEAR_DEFAULT_REPO`.
+- **Comments don't steer** — most often the API key belongs to your *personal* account, so the connector
+  shares your identity and drops your comments as its own (the fix: a dedicated bot user's key — see setup).
+  Separately, the connector must resolve its own user id at startup; if it can't (bad key) it disables
+  steering (fail-closed) and logs it. Dispatch still works either way.
+- **Repo inference follows the active provider** — on a subscription box it calls Anthropic directly on the
+  OAuth token; on an API-key provider it goes through the gateway. Both use the provider's cheap model
+  (`claude-haiku-4-5-20251001` by default). If no provider is configured at all it can't infer and asks on
+  every issue; set `LINEAR_DEFAULT_REPO` or a single-repo allowlist to skip the LLM.

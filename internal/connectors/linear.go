@@ -27,10 +27,13 @@ type linearConnector struct {
 	apiKey        string
 	webhookSecret string
 	webhookAddr   string
-	allowlist     []string // repos the agent may work on; grounds + validates the LLM repo inference
+	allowlist     []string // OPTIONAL constraint: if set, the LLM must pick one of these; empty → free-form inference
 	defaultRepo   string   // fallback when the repo can't be inferred (optional)
-	model         string   // cheap model for repo inference
+	model         string   // OPTIONAL cheap-model override (LINEAR_REPO_MODEL); else the active provider's cheap model
 	gatewayURL    string
+	providerCfg   string // provider.json — resolve the same LLM route as the worker (subscription vs API-key)
+	oauthToken    string // claude-oauth-token path (used on a subscription box)
+	authMode      string // legacy agent-auth toggle path (fallback when provider.json is absent)
 
 	client    *linear.Client
 	llm       *llm.Client
@@ -46,8 +49,11 @@ func newLinear() Connector {
 		webhookAddr:   envOr("LINEAR_WEBHOOK_ADDR", "0.0.0.0:8089"),
 		allowlist:     splitRepos(os.Getenv("LINEAR_REPO_ALLOWLIST")),
 		defaultRepo:   strings.TrimSpace(os.Getenv("LINEAR_DEFAULT_REPO")),
-		model:         envOr("LINEAR_REPO_MODEL", os.Getenv("CLAUDE_CHEAP_MODEL")),
+		model:         strings.TrimSpace(os.Getenv("LINEAR_REPO_MODEL")), // optional override; else provider cheap model
 		gatewayURL:    os.Getenv("GATEWAY_URL"),
+		providerCfg:   envOr("MANDO_PROVIDER_CONFIG", "/etc/fleet/provider.json"),
+		oauthToken:    envOr("MANDO_CLAUDE_OAUTH_TOKEN", "/etc/fleet/claude-oauth-token"),
+		authMode:      envOr("MANDO_AGENT_AUTH", "/etc/fleet/agent-auth"),
 		dedupe:        newLRUSet(500),
 		issueLock:     newKeyedMutex(),
 	}
@@ -65,8 +71,16 @@ func (l *linearConnector) Notifier() control.Notifier {
 
 func (l *linearConnector) Serve(ctx context.Context, d *Dispatcher) error {
 	l.client = linear.New(l.apiKey)
-	l.llm = llm.New(l.gatewayURL, "classify", l.model) // gateway injects the real key; bearer is a placeholder
-	l.llm.MaxTokens = 24                               // enough for an owner/name slug or UNRESOLVED
+	// Resolve the cheap-model route the same way the worker does, so it follows the active provider:
+	// subscription → Anthropic direct on the OAuth token; API-key → the gateway (which injects the real
+	// key). A hardcoded gateway route silently fails on a subscription box, where LiteLLM holds no key.
+	baseURL, token, model := control.HelperLLMFromPaths(l.providerCfg, l.oauthToken, l.authMode, l.gatewayURL)
+	if l.model != "" {
+		model = l.model // LINEAR_REPO_MODEL override
+	}
+	l.llm = llm.New(baseURL, token, model)
+	l.llm.MaxTokens = 24 // enough for an owner/name slug or UNRESOLVED
+	log.Printf("connectors/linear: repo inference model=%q via %s", model, baseURL)
 
 	// Resolve the bot's viewer id so we can tell our own comments apart. Best-effort with a few retries; if
 	// it never resolves we still serve issue dispatch but drop ALL comment events (fail-closed against an
@@ -124,6 +138,7 @@ func (l *linearConnector) handle(ctx context.Context, d *Dispatcher, w http.Resp
 	// ACK immediately, then process async: a slow LLM call must not make Linear retry the delivery. Use the
 	// long-lived Serve ctx (not the request ctx, which is cancelled once this handler returns).
 	w.WriteHeader(http.StatusOK)
+	log.Printf("connectors/linear: received %s/%s", ev.Type, ev.Action)
 	switch ev.Type {
 	case "Issue":
 		go l.handleIssue(ctx, d, ev)
@@ -191,8 +206,14 @@ func (l *linearConnector) handleComment(ctx context.Context, d *Dispatcher, ev l
 		return // fail-closed: we can't tell our own comments apart, so we can't steer safely
 	}
 	cm := ev.Comment()
-	if cm.ID == "" || cm.IssueID == "" || cm.UserID == "" || cm.UserID == l.viewerID {
-		return // ignore our own comments; and fail-closed on an author-less comment (can't attribute → can't steer)
+	if cm.UserID == l.viewerID {
+		return // our own comment — ignore (no echo loop)
+	}
+	if cm.ID == "" || cm.IssueID == "" || cm.UserID == "" {
+		// fail-closed on an author-less/unattributable comment — but log it, since a parse miss here would
+		// silently swallow steering.
+		log.Printf("connectors/linear: dropping comment (missing id/issue/author): id=%q issue=%q author=%q", cm.ID, cm.IssueID, cm.UserID)
+		return
 	}
 	if l.dedupe.seen("comment:" + cm.ID) {
 		return
@@ -212,13 +233,19 @@ func (l *linearConnector) handleComment(ctx context.Context, d *Dispatcher, ev l
 	l.tryDispatchIssue(ctx, d, cm.IssueID)
 }
 
-// resolveRepo infers the repo for an issue: a single-repo allowlist (or a bare default) short-circuits;
-// otherwise a cheap LLM picks one slug from the allowlist and the answer is VALIDATED against it. Any
-// uncertainty → the default if set, else unresolved (caller asks). Never dispatches to a guessed repo.
+// resolveRepo infers the repo for an issue. With an allowlist set it is a CONSTRAINT: a single entry
+// short-circuits, otherwise a cheap LLM picks one slug from the list and the answer is VALIDATED against
+// it. With NO allowlist the GitHub App's installed repos are the boundary, so the LLM infers the repo
+// free-form and we attempt it — an unreachable repo fails visibly on the issue. Uncertainty → the
+// default if set, else unresolved (caller asks). Never dispatches to a guessed repo without either the
+// allowlist validation or a well-formed inferred slug.
 func (l *linearConnector) resolveRepo(ctx context.Context, iss *linear.Issue) (string, bool) {
 	switch len(l.allowlist) {
 	case 0:
-		return l.defaultRepo, l.defaultRepo != ""
+		if l.defaultRepo != "" {
+			return l.defaultRepo, true
+		}
+		return l.inferRepoFreeform(ctx, iss)
 	case 1:
 		return l.allowlist[0], true
 	}
@@ -248,14 +275,68 @@ func (l *linearConnector) resolveRepo(ctx context.Context, iss *linear.Issue) (s
 	return "", false
 }
 
-// postClarify asks (once per human turn) which repo the issue is about.
+// inferRepoFreeform asks the LLM to name the repo the issue is about, as owner/repo, with NO allowlist to
+// pick from. The issue is expected to name the repo explicitly; the answer is shape-validated but not checked
+// against a list — the GitHub App's installed repos are the boundary, and a repo it can't reach fails visibly
+// on the issue. Anything that isn't a well-formed owner/repo → ("", false) (caller asks).
+func (l *linearConnector) inferRepoFreeform(ctx context.Context, iss *linear.Issue) (string, bool) {
+	const sys = "Name the GitHub repository this issue is about, as owner/repo. " +
+		"Reply with ONLY the slug (owner/repo) or UNRESOLVED if you cannot tell."
+	user := iss.Title + "\n\n" + iss.Description
+	for _, c := range iss.Comments {
+		if c.UserID != l.viewerID { // human context can disambiguate
+			user += "\n" + c.Body
+		}
+	}
+	return normalizeRepoAnswer(l.llm.Classify(ctx, sys, clampText(user, 6<<10)))
+}
+
+// normalizeRepoAnswer turns a raw LLM repo answer into a validated owner/repo slug: strip decoration, treat
+// UNRESOLVED/empty as a miss, and require a well-formed owner/repo. Returns ("", false) on anything it can't
+// validate (including a bare repo name — issues must name the owner) — never a guessed shape.
+func normalizeRepoAnswer(ans string) (string, bool) {
+	ans = strings.Trim(strings.TrimSpace(ans), "`'\".,;:")
+	if ans == "" || strings.EqualFold(ans, "unresolved") || !validRepoSlug(ans) {
+		return "", false
+	}
+	return ans, true
+}
+
+// validRepoSlug reports whether s is exactly owner/repo, both segments non-empty and composed of
+// GitHub-legal characters (letters, digits, '.', '_', '-').
+func validRepoSlug(s string) bool {
+	owner, repo, ok := strings.Cut(s, "/")
+	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
+		return false
+	}
+	return isRepoToken(owner) && isRepoToken(repo)
+}
+
+func isRepoToken(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// postClarify asks (once per human turn) which repo the issue is about — from the allowlist if one is
+// configured, otherwise as a free-form owner/repo.
 func (l *linearConnector) postClarify(ctx context.Context, iss *linear.Issue) {
 	if l.alreadyAsked(iss) {
 		return
 	}
-	body := "I couldn't tell which repository this issue is about. Reply with one of:\n"
-	for _, r := range l.allowlist {
-		body += "- `" + r + "`\n"
+	body := "I couldn't tell which repository this issue is about. "
+	if len(l.allowlist) > 0 {
+		body += "Reply with one of:\n"
+		for _, r := range l.allowlist {
+			body += "- `" + r + "`\n"
+		}
+	} else {
+		body += "Reply with the repository as `owner/repo`."
 	}
 	if _, err := l.client.CreateComment(ctx, iss.ID, body); err != nil {
 		log.Printf("connectors/linear clarify %s: %v", iss.ID, err)
