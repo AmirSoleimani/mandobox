@@ -1,4 +1,7 @@
+<p align="center"><img width="300" height="300" alt="Generated_Image_August_19__2026_-_12_27AM-removebg-preview" src="https://github.com/user-attachments/assets/2f2758fb-a1d1-47bd-986e-89f3d496e507" /></p>
+
 # Mandobox
+
 
 **Agent runtime infrastructure you host yourself: a fresh, disposable computer for every task.**
 
