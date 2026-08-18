@@ -22,10 +22,9 @@ and the work it does are pluggable, not baked in.*
 
 ## See it in action
 
-> 🎥 **Demo coming soon.**
->
-> <!-- Screen recording goes here. On GitHub you can drag-and-drop an .mp4/.mov straight into the
->      README editor (or any issue/PR) to get a hosted URL, then paste it below this line. -->
+A task from request to reviewed pull request — dispatched to its own disposable VM, back as a PR.
+
+https://github.com/user-attachments/assets/44998e77-a7c4-4879-a717-d2ee0b568f91
 
 ---
 
