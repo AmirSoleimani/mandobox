@@ -1,14 +1,14 @@
 # Mandobox
 
-**Agent runtime infrastructure you host yourself — a fresh, disposable computer for every task.**
+**Agent runtime infrastructure you host yourself: a fresh, disposable computer for every task.**
 
 Give an AI agent its own machine: an isolated, locked-down micro-VM, spun up for a single task and
-thrown away when it's done. Mandobox is the runtime that makes that safe and repeatable — many
+thrown away when it's done. Mandobox is the runtime that makes that safe and repeatable: many
 disposable computers running agents in parallel, on hardware you own, with keys that never leave it.
 Point it at your codebase and every task comes back as a pull request you review; nothing merges
 without you.
 
-*Coding-to-PR is the flagship workload today. Underneath, the runtime is general — the agent harness
+*Coding-to-PR is the flagship workload today. Underneath, the runtime is general: the agent harness
 and the work it does are pluggable, not baked in.*
 
 **Works with** &nbsp;
@@ -16,13 +16,13 @@ and the work it does are pluggable, not baked in.*
 [![Slack](https://img.shields.io/badge/Slack-4A154B?logo=slack&logoColor=white)](docs/slack.md)
 [![Telegram](https://img.shields.io/badge/Telegram-26A5E4?logo=telegram&logoColor=white)](docs/telegram.md)
 [![Linear](https://img.shields.io/badge/Linear-5E6AD2?logo=linear&logoColor=white)](docs/linear.md)
-&nbsp;— review on GitHub, start & steer from Slack or Telegram, or label a Linear issue.
+&nbsp;Review on GitHub, start & steer from Slack or Telegram, or label a Linear issue.
 
 ---
 
 ## See it in action
 
-A task from request to reviewed pull request — dispatched to its own disposable VM, back as a PR.
+A task from request to reviewed pull request, dispatched to its own disposable VM and back as a PR.
 
 https://github.com/user-attachments/assets/44998e77-a7c4-4879-a717-d2ee0b568f91
 
@@ -30,38 +30,38 @@ https://github.com/user-attachments/assets/44998e77-a7c4-4879-a717-d2ee0b568f91
 
 ## What you can do
 
-- **Delegate a task, get back a pull request** — "add a `/careers` page", "fix the login timeout",
+- **Delegate a task, get back a pull request.** "Add a `/careers` page", "fix the login timeout",
   "bump this dependency and fix the fallout." The agent reads the repo, makes the change, runs the
   tests, and opens a PR.
-- **Plan first, then build** — start a task with `--plan` and the agent explores your project and comes
-  back with a plan instead of code. Talk it over in the thread — refine it, push back, ask questions —
+- **Plan first, then build.** Start a task with `--plan` and the agent explores your project and comes
+  back with a plan instead of code. Talk it over in the thread, refine it, push back, ask questions,
   and it writes code only when you say go. It'll also stop and ask on its own if it hits a real fork in
   the road, rather than guessing.
-- **It checks its own UI work** — for a change you can see in a browser, the agent renders the result in
+- **It checks its own UI work.** For a change you can see in a browser, the agent renders the result in
   a real headless browser, looks at the screenshot, and fixes what's obviously broken *before* opening
   the PR. Ask to see it and it drops the screenshot straight into the chat thread.
-- **Run many at once** — each in its own disposable computer, without interfering.
-- **Review and steer on GitHub** — your PR comments and reviews drive the next round; the agent
+- **Run many at once.** Each in its own disposable computer, without interfering.
+- **Review and steer on GitHub.** Your PR comments and reviews drive the next round; the agent
   replies and revises right in the thread.
-- **Or steer from chat** — kick off a task from Slack or Telegram, drop in a plan or spec file, and reply
+- **Or steer from chat.** Kick off a task from Slack or Telegram, drop in a plan or spec file, and reply
   to nudge it along; when several tasks share one chat, reply to a specific one's message to steer just
   that task.
-- **Watch it work live** — a built-in terminal streams its thinking, the commands it runs, and the
+- **Watch it work live.** A built-in terminal streams its thinking, the commands it runs, and the
   files it edits, and you can **type back to steer it**.
-- **Go hands-on** — open a running machine in full VS Code (in your browser) to poke around or edit
+- **Go hands-on.** Open a running machine in full VS Code (in your browser) to poke around or edit
   by hand.
 
 ## How it works
 
-1. **You ask** — from Slack, Telegram, the dashboard, or by labelling a Linear issue, pointing at a repo
+1. **You ask.** From Slack, Telegram, the dashboard, or by labelling a Linear issue, pointing at a repo
    and describing the change (Linear infers the repo from the issue text). Add `--plan` and it proposes an
    approach for you to refine and approve before it writes any code.
-2. **It isolates** — a fresh, locked-down micro-VM boots just for this task.
-3. **The agent works** — reads the repo, makes the change, runs the tests, and writes an honest
+2. **It isolates.** A fresh, locked-down micro-VM boots just for this task.
+3. **The agent works.** It reads the repo, makes the change, runs the tests, and writes an honest
    summary, *including what it's unsure about.*
-4. **You review** — it opens a pull request and answers your comments in the thread; you can drop
+4. **You review.** It opens a pull request and answers your comments in the thread; you can drop
    into the running machine to look around or edit by hand.
-5. **You decide** — merge, request changes, or close. Merging cleans everything up.
+5. **You decide.** Merge, request changes, or close. Merging cleans everything up.
 
 ## Why it's built this way
 
@@ -71,11 +71,11 @@ https://github.com/user-attachments/assets/44998e77-a7c4-4879-a717-d2ee0b568f91
 - **One throwaway computer per task.** Each job runs in an isolated micro-VM, destroyed after. Agents
   can't see each other and only reach the parts of the internet you allow.
 - **It runs in parallel.** Many tasks side by side, without stepping on each other.
-- **You talk to it where you already work** — Slack, Telegram, Linear, GitHub, or a browser control room.
+- **You talk to it where you already work.** Slack, Telegram, Linear, GitHub, or a browser control room.
 
 ## The control room
 
-A built-in dashboard: one private screen (reached over an SSH tunnel — no public exposure) to start
+A built-in dashboard: one private screen (reached over an SSH tunnel, no public exposure) to start
 tasks, watch an agent think and act in a live color-coded terminal, connect into a running machine,
 and manage models, connectors, costs, health, and secrets from one place.
 
@@ -86,25 +86,25 @@ and manage models, connectors, costs, health, and secrets from one place.
 - **Box-wide defaults** in one file (or the dashboard): the model, machine size, how long an idle
   machine stays warm, spend caps, and which agents/models are allowed.
 - **Per-repo settings** in an optional `.mandobox.yml`, so a project can ask for a bigger machine or
-  its own instructions — within the limits you set.
-- **Pluggable agents & providers** — Claude Code by default (OpenAI Codex as a second harness); run
+  its own instructions, within the limits you set.
+- **Pluggable agents & providers:** Claude Code by default (OpenAI Codex as a second harness); run
   on an API key or [your own Claude subscription](docs/subscription-auth.md).
 
 → **[Configuration guide](docs/configuration.md)** · [`mandobox.example.yml`](mandobox.example.yml) · [Visual preview](docs/preview.md)
 
 ## Roadmap
 
-Anything that can describe a task can start one — today that's Slack, Telegram, Linear, GitHub, and the dashboard.
+Anything that can describe a task can start one. Today that's Slack, Telegram, Linear, GitHub, and the dashboard.
 Next, we want work to reach the fleet from wherever it already lives, no new habits required
 (**planned/exploring**, not shipped):
 
-- **Connectors** — Jira / GitHub Issues (assign or label an issue → it opens the PR and moves the ticket
-  along, like the shipped **[Linear](docs/linear.md)** connector), Discord / Teams, Sentry (turn a recurring
-  error into a fix task), scheduled chores, and a public API + webhooks.
-- **Beyond** — more agent harnesses, team accounts with roles, per-repo budgets & alerts, and saved
+- **Connectors:** Jira / GitHub Issues (assign or label an issue → it opens the PR and moves the ticket
+  along), Discord / Teams, Sentry (turn a recurring error into a fix task), scheduled chores, and a
+  public API + webhooks.
+- **Beyond:** more agent harnesses, team accounts with roles, per-repo budgets & alerts, and saved
   task templates.
 
-Want a particular connector? [Open an issue](../../issues) — the roadmap follows what people reach for.
+Want a particular connector? [Open an issue](../../issues). The roadmap follows what people reach for.
 
 ## Is this for you?
 
@@ -115,11 +115,11 @@ friendly guide. If you want a hosted product with zero setup, this isn't that.
 
 ## Get started
 
-- **[Getting started](docs/getting-started.md)** — the friendly, start-to-finish path.
+- **[Getting started](docs/getting-started.md):** the friendly, start-to-finish path.
 - **[Server setup](docs/hetzner-setup.md)** · **[GitHub App](docs/github-setup.md)** ·
-  **[Slack](docs/slack.md)** — the pieces it connects to.
-- **[Operator runbook](docs/runbook.md)** — the detailed deploy guide and every config knob.
-- **[How it's designed](docs/architecture.md)** — the full architecture: durable [Temporal](https://temporal.io/)
+  **[Slack](docs/slack.md)**: the pieces it connects to.
+- **[Operator runbook](docs/runbook.md):** the detailed deploy guide and every config knob.
+- **[How it's designed](docs/architecture.md):** the full architecture: durable [Temporal](https://temporal.io/)
   workflows over [Firecracker](https://firecracker-microvm.github.io/) micro-VMs, and the reasoning
   behind it.
 
